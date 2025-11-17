@@ -11,12 +11,12 @@ class Cliente(Base):
     email = Column(String, primary_key=True)  # Email como clave primaria
     nombre = Column(String, nullable=False)
     edad = Column(Integer, nullable=False)
-    pedidos = relationship(
+    pedido = relationship(
         "Pedido", back_populates="cliente", cascade="all, delete-orphan")
 
 
 # Tabla intermedia M:N entre Pedido y Menu
-pedido_menu = Table('pedido_menu',
+pedido_menu = Table('pedido_menu', Base.metadata,
                     Column('pedido_id', Integer, ForeignKey(
                         'pedido.id'), primary_key=True),
                     Column('menu_id', Integer, ForeignKey(
@@ -24,7 +24,7 @@ pedido_menu = Table('pedido_menu',
                     )
 
 # Tabla intermedia M:N entre Menu e Ingrediente
-menu_ingrediente = Table(('menu_ingrediente'),
+menu_ingrediente = Table(('menu_ingrediente'), Base.metadata,
                          Column('menu_id', Integer, ForeignKey(
                              'menu.id'), primary_key=True),
                          Column('ingrediente_id', Integer, ForeignKey(
@@ -42,7 +42,8 @@ class Pedido(Base):
     cliente_email = Column(String, ForeignKey(
         'cliente.email', onupdate="CASCADE"), nullable=False)
     cliente = relationship("Cliente", back_populates="pedido")
-    menus = relationship("Menu", secondary=pedido_menu, back_populates="")
+    menu = relationship("Menu", secondary=pedido_menu, back_populates="")
+    boleta = relationship("Boleta", back_populates="pedido", uselist=False)
 
 # Entidad Menu
 
@@ -57,7 +58,6 @@ class Menu(Base):
         "Pedido", secondary=pedido_menu, back_populates="menu")
     ingredientes = relationship(
         "Ingrediente", secondary=menu_ingrediente, back_populates="menu")
-    boleta = relationship("Boleta", back_populates="menu", uselist=False)
 
 # Entidad Ingrediente
 
@@ -68,8 +68,8 @@ class Ingrediente(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     nombre = Column(String, nullable=False)
     cantidad = Column(Integer, nullable=False)
-    menus = relationship("Menu", secondary=menu_ingrediente,
-                         back_populates="ingrediente")
+    menu = relationship("Menu", secondary=menu_ingrediente,
+                        back_populates="ingrediente")
 
 
 # Entidad Boleta
@@ -83,5 +83,5 @@ class Boleta(Base):
     total = Column(Float, nullable=False)
     pedido_id = Column(Integer, ForeignKey(
         'pedido.id', onupdate="CASCADE"), nullable=False)
-    pedido = relationship("Menu", back_populates="boleta",
+    pedido = relationship("Pedido", back_populates="boleta",
                           cascade="all, delete-orphan")
