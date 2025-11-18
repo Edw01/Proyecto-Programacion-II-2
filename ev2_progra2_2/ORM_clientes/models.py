@@ -43,7 +43,6 @@ class Pedido(Base):
         'cliente.email', onupdate="CASCADE"), nullable=False)
     cliente = relationship("Cliente", back_populates="pedido")
     menu = relationship("Menu", secondary=pedido_menu, back_populates="")
-    boleta = relationship("Boleta", back_populates="pedido", uselist=False)
 
 # Entidad Menu
 
@@ -56,7 +55,7 @@ class Menu(Base):
     descripcion = Column(String, nullable=False)
     pedidos = relationship(
         "Pedido", secondary=pedido_menu, back_populates="menu")
-    ingredientes = relationship(
+    ingrediente = relationship(
         "Ingrediente", secondary=menu_ingrediente, back_populates="menu")
 
 # Entidad Ingrediente
@@ -70,18 +69,3 @@ class Ingrediente(Base):
     cantidad = Column(Integer, nullable=False)
     menu = relationship("Menu", secondary=menu_ingrediente,
                         back_populates="ingrediente")
-
-
-# Entidad Boleta
-class Boleta(Base):
-    __tablename__ = 'boleta'
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    detalle = Column(String, nullable=False)
-    subtotal = Column(Float, nullable=False)
-    iva = Column(Float, nullable=False)
-    total = Column(Float, nullable=False)
-    pedido_id = Column(Integer, ForeignKey(
-        'pedido.id', onupdate="CASCADE"), nullable=False)
-    pedido = relationship("Pedido", back_populates="boleta",
-                          cascade="all, delete-orphan")
