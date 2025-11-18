@@ -3,6 +3,7 @@ from tkinter import messagebox, ttk
 from database import get_session
 from crud.cliente_crud import ClienteCRUD
 from crud.pedido_crud import PedidoCRUD
+from crud.menu_crud import MenuCRUD
 from database import get_session, engine, Base
 # Configuración de la ventana principal
 ctk.set_appearance_mode("System")  # Opciones: "System", "Dark", "Light"
@@ -24,6 +25,10 @@ class App(ctk.CTk):
         # Pestaña de Clientes
         self.tab_clientes = self.tabview.add("Clientes")
         self.crear_formulario_cliente(self.tab_clientes)
+
+        # Pestaña de Menus
+        self.tab_menus = self.tabview.add("Menus")
+        self.crear_formulario_menu(self.tab_menus)
 
         # Pestaña de Pedidos
         self.tab_pedidos = self.tabview.add("Pedidos")
@@ -85,6 +90,46 @@ class App(ctk.CTk):
         self.treeview_clientes.pack(pady=10, padx=10, fill="both", expand=True)
 
         self.cargar_clientes()
+
+    def crear_formulario_menu(self, parent):
+        """Crea el formulario en el Frame superior y el Treeview en el Frame inferior para la gestión de menús."""
+        # Frame superior para el formulario y botones
+        frame_superior = ctk.CTkFrame(parent)
+        frame_superior.pack(pady=10, padx=10, fill="x")
+
+        ctk.CTkLabel(frame_superior, text="Nombre").grid(row=0, column=0, pady=10, padx=10)
+        self.entry_menu_nombre = ctk.CTkEntry(frame_superior)
+        self.entry_menu_nombre.grid(row=0, column=1, pady=10, padx=10)
+
+        ctk.CTkLabel(frame_superior, text="Descripción").grid(row=0, column=4, pady=10, padx=10)
+        self.entry_menu_descripcion = ctk.CTkEntry(frame_superior)
+        self.entry_menu_descripcion.grid(row=0, column=5, pady=10, padx=10)
+
+        # Botones alineados horizontalmente en el frame superior
+        #self.btn_crear_cliente = ctk.CTkButton(frame_superior, text="Crear Cliente", command=self.crear_cliente)
+        #self.btn_crear_cliente.grid(row=1, column=0, pady=10, padx=10)
+
+        self.btn_actualizar_menu = ctk.CTkButton(frame_superior, text="Actualizar Menú", command=self.actualizar_menu)
+        self.btn_actualizar_menu.grid(row=1, column=1, pady=10, padx=10)
+
+        #self.btn_eliminar_cliente = ctk.CTkButton(frame_superior, text="Eliminar Cliente", command=self.eliminar_cliente)
+        #self.btn_eliminar_cliente.grid(row=1, column=2, pady=10, padx=10)
+
+        #self.btn_actualizar_data = ctk.CTkButton(frame_superior, text="Actualizar Datos", command=self.cargar_clientes)
+        #self.btn_actualizar_data.grid(row=1, column=3, pady=10, padx=10)
+
+        # Frame inferior para el Treeview
+        frame_inferior = ctk.CTkFrame(parent)
+        frame_inferior.pack(pady=10, padx=10, fill="both", expand=True)
+
+        # Treeview para mostrar los clientes
+        self.treeview_menus = ttk.Treeview(frame_inferior, columns=("ID", "Nombre", "Descripción"), show="headings")
+        self.treeview_menus.heading("ID", text="ID")
+        self.treeview_menus.heading("Nombre", text="Nombre")
+        self.treeview_menus.heading("Descripción", text="Descripción")
+        self.treeview_menus.pack(pady=10, padx=10, fill="both", expand=True)
+
+        self.cargar_menus()
 
     def crear_formulario_pedido(self, parent):
         """Crea el formulario en el Frame superior y el Treeview en el Frame inferior para la gestión de pedidos."""
@@ -149,7 +194,7 @@ class App(ctk.CTk):
         edad = self.entry_edad.get()
         if nombre and email:
             db = next(get_session())
-            cliente = ClienteCRUD.crear_cliente(db, nombre, email,edad)
+            cliente = ClienteCRUD.crear_cliente(db, nombre, email, edad)
             if cliente:
                 messagebox.showinfo("Éxito", "Cliente creado correctamente.")
                 self.cargar_clientes()
@@ -201,6 +246,43 @@ class App(ctk.CTk):
         self.cargar_clientes()
         self.actualizar_emails_combobox()  # Actualizar el Combobox después de eliminar
         db.close()
+
+    # Métodos CRUD para Menús
+    def cargar_menus(self):
+        db = next(get_session())
+        self.treeview_menus.delete(*self.treeview_menus.get_children())
+        menus = MenuCRUD.leer_menus(db)
+        for menu in menus:
+            self.treeview_menus.insert("", "end", values=(menu.id, menu.nombre, menu.descripcion))
+        db.close()
+
+    def actualizar_menu(self):
+        selected_item = self.treeview_menus.selection()
+        if not selected_item:
+            messagebox.showwarning("Selección", "Por favor, seleccione un menú.")
+            return
+        nombre = self.entry_menu_nombre.get()
+        descripcion = self.entry_menu_descripcion.get()
+        if not nombre.strip():
+            messagebox.showwarning("Campo Vacío", "Por favor, ingrese un nombre.")
+            return
+        if not descripcion.strip():
+            messagebox.showwarning("Campo Vacío", "Por favor, ingrese una descripción.")
+            return
+        id = self.treeview_menus.item(selected_item)["values"][0]
+        nombre = self.entry_menu_nombre.get()
+        descripcion =self.entry_menu_descripcion.get()
+        if nombre:
+            db = next(get_session())
+            menu_actualizado = MenuCRUD.actualizar_menu(db, id, nombre, descripcion)
+            if menu_actualizado:
+                messagebox.showinfo("Éxito", "Menú actualizado correctamente.")
+                self.cargar_menus()
+            else:
+                messagebox.showwarning("Error", "No se pudo actualizar el menú.")
+            db.close()
+        else:
+            messagebox.showwarning("Campos Vacíos", "Por favor, ingrese el nombre.")      
 
     # Métodos CRUD para Pedidos
     def cargar_pedidos(self):
