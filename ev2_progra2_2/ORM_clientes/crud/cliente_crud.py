@@ -1,3 +1,4 @@
+import re
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from models import Cliente
@@ -5,6 +6,16 @@ from models import Cliente
 class ClienteCRUD:
     @staticmethod
     def crear_cliente(db: Session, nombre: str, email: str, edad: int):
+        # --- Uso de Lambda para validación ---
+        validar_edad = lambda e: e >= 18
+        validar_email = lambda m: re.match(r"[^@]+@[^@]+\.[^@]+", m)
+
+        datos_validos = list(filter(lambda x: validar_edad(x[2]) and validar_email(x[1]), [(nombre, email, edad)]))
+
+        if not datos_validos:
+            print("Error: Datos inválidos (Edad < 18 o Email incorrecto).")
+            return None
+        
         cliente_existente = db.query(Cliente).filter_by(email=email).first()
         if cliente_existente:
             print(f"El cliente con el email '{email}' ya existe.")
