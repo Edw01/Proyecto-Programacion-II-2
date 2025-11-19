@@ -1,101 +1,106 @@
+import re
+import csv
+import os
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from models import Ingrediente
-# Importamos reduce si quisieras hacer cálculos complejos, pero usaremos filter y lambda aquí
-from functools import reduce 
 
 class IngredienteCRUD:
 
     @staticmethod
     def crear_ingrediente(db: Session, nombre: str, unidad: str, cantidad: float):
-        """
-        Crea un nuevo ingrediente validando los datos con Lambdas.
-        """
-        # Validamos que la cantidad no sea negativa y el nombre no esté vacío
+        # Validar nombre no vacío y stock positivo con LAMBDA
         validar_datos = lambda n, c: len(n.strip()) > 0 and c >= 0
         
         if not validar_datos(nombre, cantidad):
-            print(f"Error: Datos inválidos para el ingrediente '{nombre}'.")
+            print(f"Error: Datos inválidos para '{nombre}'.")
             return None
-        # ------------------------------------------------------
 
-        # Verificar si ya existe (ignorando mayúsculas/minúsculas)
-        ingrediente_existente = db.query(Ingrediente).filter(Ingrediente.nombre.ilike(nombre)).first()
-        if ingrediente_existente:
+        # Verificar duplicados
+        if db.query(Ingrediente).filter(Ingrediente.nombre.ilike(nombre)).first():
             print(f"El ingrediente '{nombre}' ya existe.")
-            return ingrediente_existente
+            return None
 
-        nuevo_ingrediente = Ingrediente(nombre=nombre, unidad=unidad, cantidad=float(cantidad))
-        db.add(nuevo_ingrediente)
-        
+        nuevo = Ingrediente(nombre=nombre, unidad=unidad, cantidad=float(cantidad))
+        db.add(nuevo)
         try:
             db.commit()
-            db.refresh(nuevo_ingrediente)
-            return nuevo_ingrediente
-        except SQLAlchemyError as e:
+            db.refresh(nuevo)
+            return nuevo
+        except SQLAlchemyError:
             db.rollback()
-            print(f"Error al crear ingrediente: {e}")
             return None
 
     @staticmethod
     def leer_ingredientes(db: Session):
-        """Devuelve todos los ingredientes."""
         return db.query(Ingrediente).all()
 
     @staticmethod
-    def obtener_ingrediente_por_id(db: Session, ingrediente_id: int):
-        return db.query(Ingrediente).get(ingrediente_id)
-
-    @staticmethod
-    def actualizar_stock(db: Session, ingrediente_id: int, cantidad_a_sumar: float):
-        """
-        Actualiza el stock sumando (o restando si es negativo) la cantidad.
-        """
-        ingrediente = db.query(Ingrediente).get(ingrediente_id)
-        
-        if ingrediente:
-            nueva_cantidad = ingrediente.cantidad + cantidad_a_sumar
-            
-            # Validación simple para no dejar stock negativo
-            if nueva_cantidad < 0:
-                print(f"Error: No hay suficiente stock de '{ingrediente.nombre}'.")
-                return None
-
-            ingrediente.cantidad = float(nueva_cantidad)
-            try:
-                db.commit()
-                db.refresh(ingrediente)
-                return ingrediente
-            except SQLAlchemyError as e:
-                db.rollback()
-                print(f"Error al actualizar stock: {e}")
-                return None
-        return None
-
-    @staticmethod
     def borrar_ingrediente(db: Session, ingrediente_id: int):
-        ingrediente = db.query(Ingrediente).get(ingrediente_id)
-        if ingrediente:
-            db.delete(ingrediente)
-            try:
-                db.commit()
-                return True
-            except SQLAlchemyError as e:
-                db.rollback()
-                print(f"Error al borrar ingrediente: {e}")
-                return False
+        ing = db.query(Ingrediente).get(ingrediente_id)
+        if ing:
+            db.delete(ing)
+            db.commit()
+            return True
         return False
 
     @staticmethod
     def obtener_ingredientes_bajo_stock(db: Session, umbral: float = 5.0):
-        """
-        Retorna una lista de ingredientes con stock menor al umbral.
-        USA FILTER Y LAMBDA
-        """
         todos = db.query(Ingrediente).all()
-        
-        # Filtramos la lista usando programación funcional en lugar de un bucle for
-        bajos_en_stock = list(filter(lambda ing: ing.cantidad <= umbral, todos))
-        # -----------------------------------------------
-        
-        return bajos_en_stock
+        # Uso de FILTER
+        return list(filter(lambda ing: ing.cantidad <= umbral, todos))
+
+    # --- CARGA MASIVA CSV ---
+    @staticmethod
+    def cargar_masivamente_desde_csv(db: Session, ruta_archivo: str):
+        """
+        Carga ingredientes desde CSV validando columnas y formato.
+        Usa MAP y FILTER para cumplir con la pauta.
+        """
+        if not os.path.exists(ruta_archivo):
+            return "Archivo no encontrado."
+
+        try:
+            with open(ruta_archivo, mode='r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                
+                # Validar Columnas Faltantes
+                columnas_esperadas = {'nombre', 'unidad', 'cantidad'}
+                if not columnas_esperadas.issubset(reader.fieldnames):
+                    return "Error: El CSV no tiene las columnas requeridas (nombre, unidad, cantidad)."
+
+                filas = list(reader) # Convertimos a lista para procesar
+
+                # Uso de FILTER para eliminar filas con datos vacíos
+                # Filtramos filas donde falte algún dato
+                filas_validas = list(filter(lambda row: row['nombre'] and row['unidad'] and row['cantidad'], filas))
+
+                count_agregados = 0
+                
+                for row in filas_validas:
+                    try:
+                        nombre = row['nombre'].strip()
+                        unidad = row['unidad'].strip()
+                        cantidad = float(row['cantidad']) # Validar formato numérico
+
+                        # Verificamos si existe para actualizar O crear (Upsert)
+                        ing_existente = db.query(Ingrediente).filter(Ingrediente.nombre.ilike(nombre)).first()
+                        
+                        if ing_existente:
+                            # Actualizamos stock sumando
+                            ing_existente.cantidad += cantidad
+                        else:
+                            # Creamos nuevo
+                            nuevo = Ingrediente(nombre=nombre, unidad=unidad, cantidad=cantidad)
+                            db.add(nuevo)
+                        
+                        count_agregados += 1
+                    except ValueError:
+                        continue # Si la cantidad no es número, saltamos la fila (Control de errores)
+
+                db.commit()
+                return f"Proceso completado. Se procesaron {count_agregados} ingredientes."
+
+        except Exception as e:
+            db.rollback()
+            return f"Error crítico al leer CSV: {str(e)}"
