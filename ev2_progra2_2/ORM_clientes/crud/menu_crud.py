@@ -1,4 +1,4 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy.exc import SQLAlchemyError
 from models import Menu, Ingrediente, MenuIngrediente
 from functools import reduce
@@ -6,7 +6,14 @@ from functools import reduce
 class MenuCRUD:
     @staticmethod
     def leer_menus(db: Session):
-        return db.query(Menu).all()
+        """
+        Retorna todos los menús cargando INMEDIATAMENTE sus ingredientes (Eager Loading).
+        Esto evita el error 'DetachedInstanceError' al cerrar la sesión.
+        """
+        # Usamos joinedload para traer las relaciones en la misma consulta
+        return db.query(Menu).options(
+            joinedload(Menu.ingredientes_receta).joinedload(MenuIngrediente.ingrediente)
+        ).all()
 
     @staticmethod
     def crear_menu(db: Session, nombre: str, descripcion: str, lista_ingredientes: list):
