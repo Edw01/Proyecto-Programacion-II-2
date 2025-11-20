@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
-from models import Menu, Ingrediente, menu_ingrediente
+from models import Menu, Ingrediente, MenuIngrediente
 from functools import reduce
 
 class MenuCRUD:
@@ -16,14 +16,11 @@ class MenuCRUD:
         #lista_ingredientes: Lista de tuplas o diccionarios 
                             #[(ingrediente_id, cantidad_necesaria), ...]
         
-        
-        # 1. VALIDACIÓN DE ENTRADA (LAMBDA & FILTER)
         # Filtramos ingredientes con cantidades inválidas (<= 0)
         # lista_ingredientes debe ser [(id, qty), (id, qty)...]
         # 1. VALIDACIÓN DE ENTRADA (LAMBDA & FILTER)
         items_validos = list(filter(lambda item: item[1] > 0, lista_ingredientes))
         if len(items_validos) != len(lista_ingredientes):
-            print("Error: Se han filtrado ingredientes con cantidad 0 o negativa.")
             if not items_validos: return None
 
         ids_unicos = set()
@@ -33,7 +30,6 @@ class MenuCRUD:
                 ids_unicos.add(i_id)
                 items_unicos.append((i_id, qty))
         
-        # 2. VALIDACION STOCK
         objs_ingredientes = db.query(Ingrediente).filter(Ingrediente.id.in_(ids_unicos)).all()
         dict_ingredientes = {ing.id: ing for ing in objs_ingredientes}
 
@@ -45,17 +41,18 @@ class MenuCRUD:
         es_posible_crear = reduce(lambda acumulado, item: acumulado and verificar_stock(item), items_unicos, True)
 
         if not es_posible_crear:
-            print("Error: Stock insuficiente o ingrediente inexistente.")
+            print("Error: Stock insuficiente.")
             return None
 
-        # 3. CREACION
+        # 3. CREACION 
         try:
             nuevo_menu = Menu(nombre=nombre, descripcion=descripcion)
             db.add(nuevo_menu)
-            db.flush()
+            db.flush() 
 
+            # CORRECCIÓN: Usamos MenuIngrediente (Clase) en lugar de menu_ingrediente (Tabla)
             receta_objetos = list(map(
-                lambda item: menu_ingrediente(
+                lambda item: MenuIngrediente( # <--- MAYÚSCULAS, es una Clase
                     menu_id=nuevo_menu.id,
                     ingrediente_id=item[0],
                     cantidad_requerida=item[1]

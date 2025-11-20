@@ -1,11 +1,12 @@
 import customtkinter as ctk
 from tkinter import messagebox, ttk, filedialog # AGREGADO filedialog
 from database import get_session, engine, Base
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from crud.cliente_crud import ClienteCRUD
 from crud.pedido_crud import PedidoCRUD
 from crud.ingrediente_crud import IngredienteCRUD
 from crud.menu_crud import MenuCRUD
-import graficos
+from graficos import Graficos
 
 # Configuración inicial
 ctk.set_appearance_mode("System")
@@ -25,11 +26,13 @@ class App(ctk.CTk):
         self.tab_ingredientes = self.tabview.add("Stock / Ingredientes")
         self.tab_menu = self.tabview.add("Menu")
         self.tab_pedidos = self.tabview.add("Pedidos")
+        self.tab_graficos = self.tabview.add("Gráficos")
 
         self.crear_interfaz_clientes()
         self.crear_interfaz_ingredientes()
         self.crear_interfaz_menu()
         self.crear_interfaz_pedidos()
+        self.crear_interfaz_graficos()
 
     # --- PESTAÑA CLIENTES ---
     def crear_interfaz_clientes(self):
@@ -214,7 +217,7 @@ class App(ctk.CTk):
         db.close()
         messagebox.showinfo("Total", f"Ventas: ${tot:,.0f}")
 
-    # --- pestaña 4: menus
+    # --- PESTAÑA MENUS ---
     def crear_interfaz_menu(self):
         frame = self.tab_menu
         
@@ -228,9 +231,7 @@ class App(ctk.CTk):
         self.entry_desc_menu = ctk.CTkEntry(frame_form, placeholder_text="Descripción")
         self.entry_desc_menu.pack(side="left", padx=5, expand=True, fill="x")
 
-        # Campo "Truco" para pasar la lista de ingredientes requerida por tu CRUD avanzado
-        # El usuario deberá escribir: ID:CANTIDAD, ID:CANTIDAD
-        # Ejemplo: 1:200, 2:1 (Significa ID 1 cant 200, ID 2 cant 1)
+        # Campo para ingresar IDs
         self.entry_receta = ctk.CTkEntry(frame_form, placeholder_text="Receta (ID:Cant, ID:Cant)", width=200)
         self.entry_receta.pack(side="left", padx=5)
 
@@ -242,12 +243,25 @@ class App(ctk.CTk):
         ctk.CTkButton(frame_botones, text="Refrescar", command=self.cargar_menus).pack(side="left", padx=5)
         ctk.CTkButton(frame_botones, text="Eliminar", command=self.eliminar_menu, fg_color="red").pack(side="left", padx=5)
 
-        # Tabla
-        columns = ("id", "nombre", "descripcion")
+        # --- TABLA (TREEVIEW) ACTUALIZADA ---
+        # Agregamos la columna "receta"
+        columns = ("id", "nombre", "descripcion", "receta") 
+        
         self.tree_menus = ttk.Treeview(frame, columns=columns, show="headings")
+        
         self.tree_menus.heading("id", text="ID")
+        self.tree_menus.column("id", width=30) # Hacemos el ID más pequeño
+        
         self.tree_menus.heading("nombre", text="Nombre")
+        self.tree_menus.column("nombre", width=150)
+        
         self.tree_menus.heading("descripcion", text="Descripción")
+        self.tree_menus.column("descripcion", width=200)
+        
+        # Configuración de la nueva columna
+        self.tree_menus.heading("receta", text="Ingredientes (Receta)")
+        self.tree_menus.column("receta", width=400) # Le damos harto espacio
+        
         self.tree_menus.pack(expand=True, fill="both", padx=10, pady=10)
 
         self.cargar_menus()
@@ -300,7 +314,20 @@ class App(ctk.CTk):
         db.close()
 
         for m in menus:
-            self.tree_menus.insert("", "end", values=(m.id, m.nombre, m.descripcion))
+            # Usamos una comprensión de lista (similar a map) para formatear el texto.
+            # Accedemos a 'm.ingredientes_receta' que definimos en models.py
+            
+            detalle_receta = ", ".join([
+                f"{item.ingrediente.nombre} ({item.cantidad_requerida} {item.ingrediente.unidad})"
+                for item in m.ingredientes_receta
+            ])
+            
+            # Si no tiene ingredientes (por seguridad), mostramos vacío
+            if not detalle_receta:
+                detalle_receta = "Sin ingredientes definidos"
+
+            # Insertamos en la tabla incluyendo la nueva columna
+            self.tree_menus.insert("", "end", values=(m.id, m.nombre, m.descripcion, detalle_receta))
 
     def eliminar_menu(self):
         sel = self.tree_menus.selection()
@@ -310,6 +337,81 @@ class App(ctk.CTk):
             MenuCRUD.borrar_menu(db, id_menu)
             db.close()
             self.cargar_menus()
+
+    # --- PESTAÑA GRAFICOS ---
+    def crear_interfaz_graficos(self):
+        frame = self.tab_graficos
+        
+        # --- Panel de Control ---
+        frame_ctrl = ctk.CTkFrame(frame)
+        frame_ctrl.pack(pady=10, padx=10, fill="x")
+
+        # Selector de Tipo
+        ctk.CTkLabel(frame_ctrl, text="Tipo:").pack(side="left", padx=5)
+        self.combo_tipo = ctk.CTkComboBox(
+            frame_ctrl, 
+            values=["Ventas por Fecha", "Distribución Menús", "Uso de Ingredientes"],
+            command=self.actualizar_combo_periodo, # Evento al cambiar
+            state="readonly",
+            width=180
+        )
+        self.combo_tipo.set("Ventas por Fecha")
+        self.combo_tipo.pack(side="left", padx=5)
+
+        # Selector de Periodo (Solo visible para Fechas)
+        self.combo_periodo = ctk.CTkComboBox(
+            frame_ctrl,
+            values=["Diario", "Mensual", "Anual"],
+            state="readonly",
+            width=100
+        )
+        self.combo_periodo.set("Diario")
+        self.combo_periodo.pack(side="left", padx=5)
+
+        # Botón Generar
+        ctk.CTkButton(frame_ctrl, text="Generar Gráfico", command=self.generar_grafico).pack(side="left", padx=20)
+
+        # --- Área de Dibujo ---
+        self.frame_canvas = ctk.CTkFrame(frame)
+        self.frame_canvas.pack(expand=True, fill="both", padx=10, pady=10)
+        self.canvas_actual = None
+
+    def actualizar_combo_periodo(self, seleccion):
+        """Habilita o deshabilita el periodo según el tipo de gráfico"""
+        if seleccion == "Ventas por Fecha":
+            self.combo_periodo.configure(state="normal")
+        else:
+            self.combo_periodo.configure(state="disabled")
+
+    def generar_grafico(self):
+        tipo = self.combo_tipo.get()
+        periodo = self.combo_periodo.get()
+
+        # 1. Obtener sesión y Datos
+        db = next(get_session())
+        etiquetas, valores, error = Graficos.obtener_datos(db, tipo, periodo)
+        db.close()
+
+        # 2. Validaciones de la Rúbrica
+        if error:
+            # Limpiar gráfico anterior
+            if self.canvas_actual: 
+                self.canvas_actual.get_tk_widget().destroy()
+                self.canvas_actual = None
+            
+            messagebox.showinfo("Información", error) # "Mostrar mensaje si no existen registros"
+            return
+
+        # 3. Generar Figura
+        figura = Graficos.crear_figura(etiquetas, valores, tipo)
+
+        # 4. Incrustar en Tkinter
+        if self.canvas_actual:
+            self.canvas_actual.get_tk_widget().destroy()
+
+        self.canvas_actual = FigureCanvasTkAgg(figura, master=self.frame_canvas)
+        self.canvas_actual.draw()
+        self.canvas_actual.get_tk_widget().pack(expand=True, fill="both")
 
 if __name__ == "__main__":
     app = App()
