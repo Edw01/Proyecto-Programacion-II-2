@@ -1,0 +1,46 @@
+\documentclass[a4paper,12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[spanish]{babel}
+\usepackage{geometry}
+\geometry{margin=2.5cm}
+\usepackage{graphicx}
+\usepackage{amsmath, amssymb}
+\usepackage{xcolor}
+\usepackage{tikz, tcolorbox}
+\usepackage{listings}
+\usepackage{fancyvrb}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+\usepackage{float}
+\usepackage{eso-pic}
+
+\title {\includegraphics[width=0.4\textwidth]{ing-uni.jpg}\\[2ex]{\textbf{Informe Proyecto\\ Restaurante v1.1}\\[1.5ex] Programacion II\\[3ex]{\normalsize\textbf{Profesor:} Guido Mellado}\\[1ex]{\normalsize\textbf{Ayudantes:} Fernando Valdéz y Joaquín Cantero}}\\[12ex]}
+\author{Diego Hernandez, Benjamin Soto, Eduardo Necul}
+\date{20 Noviembre de 2025}
+
+\lstset{
+    backgroundcolor=\color{gray!10},
+    basicstyle=\ttfamily\footnotesize,
+    frame=single,
+    breaklines=true,
+    keywordstyle=\color{blue},
+    commentstyle=\color{green!50!black},
+    stringstyle=\color{orange},
+    showstringspaces=false
+}
+
+\begin{document}
+
+\AddToShipoutPictureFG{% Anadir a la pagina actual
+  \AtPageUpperLeft{% Punto de referencia: esquina superior izquierda
+    \put(0.5cm, -2.2cm){% Mover x cm a la derecha y x cm hacia abajo
+      \includegraphics[width=8cm]{departamento-inf.png}
+    }
+  }
+}
+{% Agrego esto para poner el logo del departamento de informatica en la zona superior.
+}
+
+\maketitle
+
+\end{document}
