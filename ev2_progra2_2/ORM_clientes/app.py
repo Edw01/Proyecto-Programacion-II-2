@@ -4,6 +4,8 @@ from database import get_session, engine, Base
 from crud.cliente_crud import ClienteCRUD
 from crud.pedido_crud import PedidoCRUD
 from crud.ingrediente_crud import IngredienteCRUD
+from crud.menu_crud import MenuCRUD
+import graficos
 
 # Configuración inicial
 ctk.set_appearance_mode("System")
@@ -21,13 +23,24 @@ class App(ctk.CTk):
 
         self.tab_clientes = self.tabview.add("Clientes")
         self.tab_ingredientes = self.tabview.add("Stock / Ingredientes")
+        self.tab_menu = self.tabview.add("Menu")
         self.tab_pedidos = self.tabview.add("Pedidos")
 
         self.crear_interfaz_clientes()
         self.crear_interfaz_ingredientes()
+        self.crear_interfaz_menu()
         self.crear_interfaz_pedidos()
 
+<<<<<<< Updated upstream
     # --- PESTAÑA CLIENTES ---
+=======
+        # Inicializar la variable de la ventana que aparecera en Menu
+        self.ventana_menu = None
+
+
+
+    # PESTAÑA 1: GESTIÓN DE CLIENTES
+>>>>>>> Stashed changes
     def crear_interfaz_clientes(self):
         frame = self.tab_clientes
         frame_form = ctk.CTkFrame(frame)
@@ -166,7 +179,178 @@ class App(ctk.CTk):
             db.close()
             self.cargar_ingredientes()
 
+<<<<<<< Updated upstream
     # --- PESTAÑA PEDIDOS ---
+=======
+    # ==============================================================
+    #                   PESTAÑA 3: MENU
+    # ==============================================================
+
+    def crear_interfaz_menu(self):
+        frame = self.tab_menu
+
+        # Cabecera
+        ctk.CTkLabel(frame, text="Gestion de Menus", font=("Helvetica", 18)).pack(pady=10)
+
+        # Botones principales
+        frame_botones = ctk.CTkFrame(frame, fg_color="transparent")
+        frame_botones.pack(pady=5)
+
+        ctk.CTkButton(frame_botones, text="Crear Nuevo Menú (Ventana)", command=self.abrir_ventana_crear_menu).pack(side="left", padx=10)
+        ctk.CTkButton(frame_botones, text="Refrescar Lista", command=self.cargar_menus).pack(side="left", padx=10)
+        ctk.CTkButton(frame_botones, text="Eliminar Menú", command=self.eliminar_menu, fg_color="red").pack(side="left", padx=10)
+
+        # Tabla de Menús
+        columns = ("id", "nombre", "descripcion", "ingredientes")
+        self.tree_menus = ttk.Treeview(frame, columns=columns, show="headings")
+        self.tree_menus.heading("id", text="ID")
+        self.tree_menus.heading("nombre", text="Nombre del Menú")
+        self.tree_menus.heading("descripcion", text="Descripción")
+        self.tree_menus.heading("ingredientes", text="Resumen Ingredientes") # Columna extra
+        
+        self.tree_menus.column("id", width=40)
+        self.tree_menus.column("ingredientes", width=300)
+        
+        self.tree_menus.pack(expand=True, fill="both", padx=10, pady=10)
+        
+        self.cargar_menus()
+
+    def cargar_menus(self):
+        for item in self.tree_menus.get_children(): self.tree_menus.delete(item)
+        
+        db = next(get_session())
+        menus = MenuCRUD.leer_menus(db)
+        
+        for m in menus:
+            # Generar resumen de ingredientes
+            resumen = ", ".join([f"{mi.ingrediente.nombre} ({mi.cantidad_requerida})" for mi in m.ingredientes_asociados])
+            self.tree_menus.insert("", "end", values=(m.id, m.nombre, m.descripcion, resumen))
+        db.close()
+
+    def eliminar_menu(self):
+        sel = self.tree_menus.selection()
+        if not sel: return
+        id_menu = self.tree_menus.item(sel[0])['values'][0]
+        
+        if messagebox.askyesno("Confirmar", "¿Eliminar este menú?"):
+            db = next(get_session())
+            MenuCRUD.borrar_menu(db, id_menu)
+            db.close()
+            self.cargar_menus()
+
+    # Ventana emergente de crear menu
+    def abrir_ventana_crear_menu(self):
+        if self.ventana_menu is None or not self.ventana_menu.winfo_exists():
+            self.ventana_menu = ctk.CTkToplevel(self)
+            self.ventana_menu.geometry("500x500")
+            self.ventana_menu.title("Crear Nuevo Menú")
+            self.ventana_menu.attributes("-topmost", True)
+            
+            # Contenido de la ventana ---
+            
+            # 1. Datos basicos
+            ctk.CTkLabel(self.ventana_menu, text="Datos del Menú", font=("Arial", 14, "bold")).pack(pady=5)
+            self.entry_nuevo_menu_nombre = ctk.CTkEntry(self.ventana_menu, placeholder_text="Nombre...")
+            self.entry_nuevo_menu_nombre.pack(fill="x", padx=20, pady=5)
+            
+            self.entry_nuevo_menu_desc = ctk.CTkEntry(self.ventana_menu, placeholder_text="Descripción...")
+            self.entry_nuevo_menu_desc.pack(fill="x", padx=20, pady=5)
+
+            # 2. Seleccion de Ingredientes
+            ctk.CTkLabel(self.ventana_menu, text="Agregar Ingredientes", font=("Arial", 14, "bold")).pack(pady=10)
+            
+            frame_ingr = ctk.CTkFrame(self.ventana_menu)
+            frame_ingr.pack(padx=20, pady=5, fill="x")
+
+            # Cargar ingredientes para el ComboBox
+            db = next(get_session())
+            ings = IngredienteCRUD.leer_ingredientes(db)
+            db.close()
+            
+            # Lista de nombres para el combo (guardamos referencia ID en diccionario)
+            self.map_ingredientes = {f"{i.nombre} (Stock: {i.cantidad})": i.id for i in ings}
+            opciones = list(self.map_ingredientes.keys())
+
+            self.combo_ingr_sel = ctk.CTkComboBox(frame_ingr, values=opciones, width=200)
+            self.combo_ingr_sel.pack(side="left", padx=5)
+            
+            self.entry_ingr_cant = ctk.CTkEntry(frame_ingr, placeholder_text="Cant.", width=60)
+            self.entry_ingr_cant.pack(side="left", padx=5)
+            
+            ctk.CTkButton(frame_ingr, text="+", width=40, command=self.agregar_ingrediente_temporal).pack(side="left", padx=5)
+
+            # 3. Lista temporal de ingredientes agregados
+            self.lista_ingredientes_temp = [] # Guardará tuplas (id, nombre, cantidad)
+            
+            self.listbox_ingredientes = ttk.Treeview(self.ventana_menu, columns=("nombre", "cant"), show="headings", height=6)
+            self.listbox_ingredientes.heading("nombre", text="Ingrediente")
+            self.listbox_ingredientes.heading("cant", text="Cantidad Req.")
+            self.listbox_ingredientes.pack(padx=20, pady=10, fill="both", expand=True)
+
+            # 4. Boton de guardar menu
+            ctk.CTkButton(self.ventana_menu, text="Guardar Menú", command=self.guardar_menu_final, fg_color="green").pack(pady=10)
+
+        else:
+            self.ventana_menu.focus()
+
+    def agregar_ingrediente_temporal(self):
+        seleccion = self.combo_ingr_sel.get()
+        cant_str = self.entry_ingr_cant.get()
+
+        if not seleccion or not cant_str:
+            return
+
+        try:
+            cantidad = float(cant_str)
+            if cantidad <= 0:
+                messagebox.showwarning("Error", "Cantidad debe ser mayor a 0.")
+                return
+        except ValueError:
+            messagebox.showwarning("Error", "Cantidad inválida.")
+            return
+
+        ing_id = self.map_ingredientes.get(seleccion)
+        
+        # Agregar a lista logica
+        self.lista_ingredientes_temp.append((ing_id, cantidad))
+        
+        # Agregar a vista
+        nombre_solo = seleccion.split("(")[0].strip()
+        self.listbox_ingredientes.insert("", "end", values=(nombre_solo, cantidad))
+        
+        # Limpiar entrada cantidad
+        self.entry_ingr_cant.delete(0, 'end')
+
+    def guardar_menu_final(self):
+        nombre = self.entry_nuevo_menu_nombre.get()
+        desc = self.entry_nuevo_menu_desc.get()
+
+        if not nombre or not desc:
+            messagebox.showwarning("Faltan datos", "Debe poner nombre y descripción.")
+            return
+        
+        if not self.lista_ingredientes_temp:
+            messagebox.showwarning("Receta vacía", "Debe agregar al menos un ingrediente.")
+            return
+
+        db = next(get_session())
+        nuevo = MenuCRUD.crear_menu(db, nombre, desc, self.lista_ingredientes_temp)
+        db.close()
+
+        if nuevo:
+            messagebox.showinfo("Éxito", f"Menú '{nombre}' creado correctamente.")
+            self.ventana_menu.destroy()
+            self.cargar_menus()
+        else:
+            messagebox.showerror("Error", "No se pudo crear. Verifique que haya stock suficiente de los ingredientes seleccionados.")
+
+    
+    # ==============================================================
+    #                   PESTAÑA 4: PEDIDOS
+    # ==============================================================
+
+
+>>>>>>> Stashed changes
     def crear_interfaz_pedidos(self):
         frame = self.tab_pedidos
         frame_form = ctk.CTkFrame(frame)
