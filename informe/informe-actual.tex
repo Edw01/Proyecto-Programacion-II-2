@@ -63,4 +63,31 @@ Para visualizar con claridad el problema presentado y su diseño \textbf{POO}, d
     \caption{Diagrama de Clases de la aplicación.}.
 \end{figure}
 
+\newpage
+\subsection{Explicacion de Diagrama}
+La clase \textbf{\textit{AplicacionConPestanas}} es la principal clase del programa, ya que es ella la que se usa para configurar la interfaz de CustomTkinter e instanciar, relacionar y modificar el resto de clases del sistema, las cuales se describen a continuación brevemente:
+\begin{itemize}
+
+    \item La clase \textit{Stock} es aquella donde se administra la información de ingredientes, y que servirá para determinar la disponibilidad de menúes (o platos) en función de si existen los ingredientes requeridos o no, y tiene una relación de asociación con \textit{AplicacionConPestanas}, ya que pese a que esta última instancia un objeto Stock, no hay un contenedor de los objetos instanciados (lista) y ambas clases son independientes, en la que una referencia a otra.
+    
+    \item La clase \textit{Ingrediente} es aquella que configura la información de un ingrediente en base a sus tres atributos principales y que coinciden con el estándar de información del archivo CSV. Es el elemento principal de la clase Stock.
+    
+    \item La clase \textit{CrearMenu} es donde se configura la información de un menú/platillo y se configura en base a objetos Ingredientes, debido a la relación explicada en la clase Stock.
+    \begin{itemize}
+        \item[$\rightarrow$] Debido a la relación entre Stock y menúes, los objetos CrearMenu tienen una relación de agregación con los objetos Ingrediente, ya que toman ingredientes determinados y los configuran como parte de sus requisitos (los ingredientes requeridos o que forman parte de CrearMenu deben coincidir con ingredientes existentes en Stock).
+        \item[$\rightarrow$] Exclusivamente, esta clase cuenta con una relación de abstracción + implementación con la clase IMenu, la cual corresponde a una interfaz que verifica que la construcción de CrearMenu cumpla los criterios solicitados.
+    \end{itemize}
+    
+    \item La clase \textit{Pedido} es la clase donde se configura la información del pedido de un cliente en particular.
+    
+        \begin{itemize}
+            \item[$\rightarrow$] La aplicación solo puede trabajar con máximo un Pedido a la vez, o con carencia de este, esto en una relación de asociación, ya que la existencia de ambos es bastante independiente (salvo por la instanciación que depende AplicacionConPestanas).
+            \item[$\rightarrow$] La clase Pedido se configura en base a los menúes (CrearMenu) instanciados, y los va agregando en sí, teniendo la posibilidad de tener 1 o muchos menúes (de lo contrario Pedido estaría vacío y no habría datos con los que trabajar).
+        \end{itemize}
+        
+    \item La clase \textit{BoletaFacade} tiene el proposito de generar la boleta de compra a partir de la recepcion de un objeto "pedido", pedido cual contiene lo comprado por el cliente en el restaurant.
+    
+    \item La clase \textit{CtkPDFViewer} es una clase auxiliar que sirve para crear la visualización del archivo PDF con la función de carga de PDF de \textit{AplicacionConPestanas}.
+\end{itemize}
+
 \end{document}
