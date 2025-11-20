@@ -65,8 +65,7 @@ class Ingrediente(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     nombre = Column(String, nullable=False)
-    unidad = Column(String, nullable=False, default="unid") # Agregado campo unidad para consistencia
-    cantidad = Column(Float, nullable=False) # Cambiado a Float para permitir 0.5 kg etc
-    
-    # Relacion inversa con MenuIngrediente
-    menus_asociados = relationship("MenuIngrediente", back_populates="ingrediente")
+    unidad = Column(String, nullable=False)
+    cantidad = Column(Integer, nullable=False)
+    menu = relationship("Menu", secondary=menu_ingrediente,
+                        back_populates="ingrediente")

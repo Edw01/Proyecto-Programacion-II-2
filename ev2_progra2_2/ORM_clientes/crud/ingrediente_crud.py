@@ -54,53 +54,69 @@ class IngredienteCRUD:
     @staticmethod
     def cargar_masivamente_desde_csv(db: Session, ruta_archivo: str):
         """
-        Carga ingredientes desde CSV validando columnas y formato.
-        Usa MAP y FILTER para cumplir con la pauta.
+        Carga ingredientes desde CSV.
+        Maneja BOM (utf-8-sig) y espacios en las cabeceras.
         """
         if not os.path.exists(ruta_archivo):
             return "Archivo no encontrado."
 
         try:
-            with open(ruta_archivo, mode='r', encoding='utf-8') as f:
-                reader = csv.DictReader(f)
+            # Usamos 'utf-8-sig' para leer archivos creados en Excel/Windows correctamente
+            with open(ruta_archivo, mode='r', encoding='utf-8-sig') as f:
                 
-                # Validar Columnas Faltantes
-                columnas_esperadas = {'nombre', 'unidad', 'cantidad'}
-                if not columnas_esperadas.issubset(reader.fieldnames):
-                    return "Error: El CSV no tiene las columnas requeridas (nombre, unidad, cantidad)."
+                # Leemos primero para detectar el separador automáticamente (coma o punto y coma)
+                sample = f.read(1024)
+                f.seek(0)
+                dialect = csv.Sniffer().sniff(sample)
+                
+                reader = csv.DictReader(f, dialect=dialect)
+                
+                # Normalizar cabeceras (quitar espacios extra y convertir a minúsculas)
+                # Esto arregla si el CSV dice " nombre " o "Nombre"
+                if reader.fieldnames:
+                    reader.fieldnames = [col.strip().lower() for col in reader.fieldnames]
 
-                filas = list(reader) # Convertimos a lista para procesar
+                # Validar Columnas
+                columnas_requeridas = {'nombre', 'unidad', 'cantidad'}
+                columnas_en_csv = set(reader.fieldnames)
 
-                # Uso de FILTER para eliminar filas con datos vacíos
-                # Filtramos filas donde falte algún dato
-                filas_validas = list(filter(lambda row: row['nombre'] and row['unidad'] and row['cantidad'], filas))
+                if not columnas_requeridas.issubset(columnas_en_csv):
+                    return f"Error: Faltan columnas. El CSV tiene: {list(columnas_en_csv)}"
+
+                # Convertimos a lista para aplicar Filter
+                filas = list(reader) 
+
+                # Filtrar filas vacías
+                filas_validas = list(filter(lambda row: row.get('nombre') and row.get('cantidad'), filas))
 
                 count_agregados = 0
+                count_actualizados = 0
                 
                 for row in filas_validas:
                     try:
                         nombre = row['nombre'].strip()
                         unidad = row['unidad'].strip()
-                        cantidad = float(row['cantidad']) # Validar formato numérico
+                        # Reemplazar coma por punto si el Excel guardó decimales como "10,5"
+                        cant_str = row['cantidad'].replace(',', '.')
+                        cantidad = float(cant_str)
 
-                        # Verificamos si existe para actualizar O crear (Upsert)
+                        # Lógica de Upsert (Actualizar o Crear)
                         ing_existente = db.query(Ingrediente).filter(Ingrediente.nombre.ilike(nombre)).first()
                         
                         if ing_existente:
-                            # Actualizamos stock sumando
                             ing_existente.cantidad += cantidad
+                            count_actualizados += 1
                         else:
-                            # Creamos nuevo
                             nuevo = Ingrediente(nombre=nombre, unidad=unidad, cantidad=cantidad)
                             db.add(nuevo)
-                        
-                        count_agregados += 1
+                            count_agregados += 1
+                    
                     except ValueError:
-                        continue # Si la cantidad no es número, saltamos la fila (Control de errores)
+                        continue # Saltar filas con errores numéricos
 
                 db.commit()
-                return f"Proceso completado. Se procesaron {count_agregados} ingredientes."
+                return f"Éxito: {count_agregados} nuevos, {count_actualizados} actualizados."
 
         except Exception as e:
             db.rollback()
-            return f"Error crítico al leer CSV: {str(e)}"
+            return f"Error crítico: {str(e)}"
