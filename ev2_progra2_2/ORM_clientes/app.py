@@ -1,5 +1,5 @@
 import customtkinter as ctk
-from tkinter import messagebox, ttk, filedialog # <--- AGREGADO filedialog
+from tkinter import messagebox, ttk, filedialog # AGREGADO filedialog
 from database import get_session, engine, Base
 from crud.cliente_crud import ClienteCRUD
 from crud.pedido_crud import PedidoCRUD
