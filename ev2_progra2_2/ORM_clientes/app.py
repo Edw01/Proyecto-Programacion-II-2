@@ -766,19 +766,51 @@ class App(ctk.CTk):
                 messagebox.showerror("Error", "No se pudo anular el pedido.")
 
     def cargar_pedidos(self, *args):
-        for i in self.tree_pedidos.get_children(): self.tree_pedidos.delete(i)
-        
+        # 1. Limpiar la tabla actual
+        for item in self.tree_pedidos.get_children():
+            self.tree_pedidos.delete(item)
+
+        # 2. Obtener texto de búsqueda (Filtro)
+        # Usamos try/except por seguridad si el campo aún no se ha creado
+        try:
+            texto_busqueda = self.entry_cliente_email_ped.get().strip().lower()
+        except AttributeError:
+            texto_busqueda = ""
+
+        # 3. Traer TODOS los pedidos de la BD
         db = next(get_session())
-        # Usamos eager loading para mostrar los menús en la tabla
-        pedidos = db.query(Pedido).options(joinedload(Pedido.menus)).all()
+        todos_pedidos = PedidoCRUD.leer_pedidos(db)
         db.close()
 
-        for p in pedidos:
-            nombres_menus = ", ".join([m.nombre for m in p.menus])
-            total = sum([m.precio for m in p.menus])
-            fecha = p.fecha.strftime("%Y-%m-%d %H:%M") if p.fecha else ""
+        # 4. APLICAR FILTRO (Programación Funcional)
+        if texto_busqueda:
+            # Usamos FILTER + LAMBDA para dejar solo los que coincidan con el email
+            # "in" permite búsquedas parciales (ej: "juan" encuentra "juan@gmail.com")
+            pedidos_a_mostrar = list(filter(
+                lambda p: texto_busqueda in p.cliente_email.lower(), 
+                todos_pedidos
+            ))
+        else:
+            # Si no escribió nada, mostramos todo
+            pedidos_a_mostrar = todos_pedidos
+
+        # 5. Llenar la tabla con los resultados (Filtrados o Todos)
+        for p in pedidos_a_mostrar:
+            # Formatear fecha de manera segura
+            fecha_str = ""
+            if p.fecha:
+                # Validamos si es string o datetime
+                if isinstance(p.fecha, str):
+                    fecha_str = p.fecha
+                else:
+                    fecha_str = p.fecha.strftime("%Y-%m-%d %H:%M")
             
-            self.tree_pedidos.insert("", "end", values=(p.id, p.cliente_email, fecha, nombres_menus, total))
+            # Insertamos en la tabla (ID, Cliente, Descripción, Fecha)
+            self.tree_pedidos.insert("", "end", values=(p.id, p.cliente_email, p.descripcion, fecha_str))
+            
+        # Opcional: Mostrar mensaje si buscó algo y no encontró nada
+        if texto_busqueda and not pedidos_a_mostrar:
+            pass
 
     # PESTAÑA GRAFICOS
 
@@ -884,6 +916,8 @@ class App(ctk.CTk):
         ctk.CTkLabel(frame_prod, text="2. Agregar Producto:").pack(side="left", padx=5)
         self.combo_menus_compra = ctk.CTkComboBox(frame_prod, width=250, state="readonly")
         self.combo_menus_compra.pack(side="left", padx=5)
+
+        ctk.CTkButton(frame_prod, text="🔄", width=30, command=self.cargar_combo_menus).pack(side="left", padx=5)
 
         ctk.CTkButton(frame_prod, text="Agregar al Carrito", command=self.agregar_al_carrito).pack(side="left", padx=10)
 
