@@ -4,8 +4,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError, OperationalError
 from models import Pedido, Cliente
 
+
 class PedidoCRUD:
-    
+
     @staticmethod
     def _try_commit(db: Session, max_retries=3, delay=0.5):
         """Intentar hacer commit con reintentos en caso de errores de bloqueo."""
@@ -17,7 +18,8 @@ class PedidoCRUD:
             except OperationalError as e:
                 if "database is locked" in str(e):
                     db.rollback()
-                    print(f"Intento {retries+1}/{max_retries}: la base de datos está bloqueada, reintentando en {delay} segundos...")
+                    print(
+                        f"Intento {retries+1}/{max_retries}: la base de datos está bloqueada, reintentando en {delay} segundos...")
                     time.sleep(delay)
                     retries += 1
                 else:
@@ -46,8 +48,11 @@ class PedidoCRUD:
         return None
 
     @staticmethod
-    def leer_pedidos(db: Session):
-        return db.query(Pedido).all()
+    def leer_pedidos(db: Session, cliente_nombre=None):
+        query = db.query(Pedido).join(Cliente)
+        if cliente_nombre and cliente_nombre != "Todos":
+            query = query.filter(Cliente.nombre == cliente_nombre)
+        return query.all()
 
     @staticmethod
     def actualizar_pedido(db: Session, pedido_id: int, nueva_descripcion: str):
@@ -79,16 +84,16 @@ class PedidoCRUD:
         Usa MAP para obtener valores y REDUCE para sumar.
         """
         pedidos = db.query(Pedido).all()
-        
+
         if not pedidos:
             return 0.0
 
         # 1. Simulación de precio: Asumimos un valor fijo por pedido si no hay menús
         # (Esto es para cumplir el requisito académico de usar map/reduce)
         # Transformamos cada objeto pedido en un monto (ej: $5000 por pedido)
-        montos = map(lambda p: 5000.0, pedidos) 
+        montos = map(lambda p: 5000.0, pedidos)
 
         # 2. REDUCE: Sumar todo a un solo valor total
         total_general = reduce(lambda a, b: a + b, montos, 0.0)
-        
+
         return total_general
