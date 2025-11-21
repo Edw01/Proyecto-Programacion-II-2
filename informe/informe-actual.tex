@@ -311,5 +311,256 @@ return db.query(Menu).options(
 ).all()
 \end{lstlisting}
 
+\subsection{Pestaña de clientes}
+
+Para la pestaña de Clientes, implementamos una arquitectura \textbf{CRUD completa} que conecta la interfaz gráfica (\lstinline{app.py}) con la base de datos (\lstinline{models.py}) a través de un controlador lógico (\lstinline{cliente\_crud.py}). \\
+
+Lo más importante de este módulo es que \textbf{no solo guarda datos}, sino que los \textbf{transforma y valida} utilizando \textbf{Programación Funcional} antes de que toquen la base de datos, y protege la integridad del negocio impidiendo borrar clientes activos. \\
+
+Aquí están los 3 pilares técnicos que hacen funcionar esta pestaña: \\
+
+\textbf{1. Validación y Limpieza con Programación Funcional} \\
+
+En lugar de usar múltiples \lstinline{if} o bucles \lstinline{for} tradicionales para revisar los datos, utilizamos funciones de orden superior para cumplir con el requisito avanzado de la rúbrica:
+
+\begin{itemize}
+    \item \lstinline{map} \textbf{(Transformación):} Lo usamos para "limpiar" los datos de entrada automáticamente. Convertimos el nombre a formato "Título" (Juan Perez) y el email a minúsculas, asegurando consistencia visual.
+    \item \lstinline{filter} $+$ \lstinline{lambda} \textbf{(Validación):} Usamos una función lambda junto con expresiones regulares (Regex) para filtrar los datos. Si el cliente no tiene 18 años o su email no tiene formato válido (x@x.x), el filtro lo descarta y no se guarda.
+\end{itemize}
+
+\textbf{Código Clave (\lstinline{cliente_crud.py}):}
+
+\begin{lstlisting}[language=Python, frame=single]
+# 1. Limpieza con MAP
+nombre_fmt, email_fmt = list(map(
+    lambda x: x.strip().title() if '@' not in x else x.strip().lower(), 
+    [nombre, email]
+))
+
+# 2. Validacion con FILTER y LAMBDA
+validar_email = lambda m: re.match(r"[^@]+@[^@]+\.[^@]+", m) is not None
+datos_validos = list(filter(
+    lambda x: validar_email(x[1]) and x[2] >= 18, 
+    [(nombre_fmt, email_fmt, edad)]
+))
+\end{lstlisting}
+\vspace{3mm}
+
+\textbf{2. Protección de Integridad Referencial (Borrado Seguro)} \\
+
+Uno de los requisitos críticos es \textbf{impedir eliminar clientes que tengan pedidos}.
+
+\begin{itemize}
+    \item Si borráramos un cliente "a la fuerza", sus pedidos quedarían huérfanos o se borrarían en cascada (perdiendo historial de ventas).
+    \item Para evitarlo, antes de eliminar, consultamos la relación \lstinline{cliente.pedido}. Si la lista de pedidos no está vacía, el sistema \textbf{bloquea la eliminación} y devuelve una advertencia.
+\end{itemize}
+
+\textbf{Código Clave (cliente\_crud.py):}
+
+\begin{lstlisting}[language=Python, frame=single]
+# Accedemos a la relacion ORM 'pedido'
+if len(cliente.pedido) > 0:
+    return "Tiene Pedidos" # Bloqueamos la eliminacion
+\end{lstlisting}
+\vspace{3mm}
+
+\textbf{3. Interacción UI-Base de Datos (Treeview)} \\
+
+La interfaz gráfica utiliza un componente \lstinline{Treeview} (Tabla).
+
+\begin{itemize}
+    \item La función \lstinline{cargar\_clientes} solicita todos los objetos a la base de datos.
+    \item Itera sobre estos objetos y los inserta en la tabla visual.
+    \item Esto asegura que lo que ve el usuario es siempre el estado real de la base de datos (Sincronización).
+\end{itemize}
+
+\subsection{Pestaña panel de compra}
+
+Para que el Panel de Compra funcione como un sistema de ventas real, implementamos una arquitectura de \textbf{Transacción Atómica}. Esto significa que la venta no es solo ''guardar un pedido'', sino una operación compleja que debe cumplir tres condiciones simultáneas o fallar por completo (Todo o Nada):
+
+\begin{itemize}
+    \item[1.] \textbf{Validar stock:} Verificar que existan ingredientes suficientes para todos los menús del carrito.
+    \item[2.] \textbf{Descontar Inventario:} Restar los ingredientes de la bodega.
+    \item[3.] \textbf{Registrar la venta:} Crear el pedido, asociar los menús y generar la boleta.
+\end{itemize}
+
+Si cualquiera de estos pasos falla (ej: se corta la luz o falta 1 gramo de queso), el sistema hace un \textbf{Rollback} y no guarda nada, protegiendo la integridad de los datos. \\
+
+Aquí están los 4 pilares técnicos de la implementación: \\
+
+\textbf{1. Gestión de Estado en Memoria (El Carrito)} \\
+
+En la interfaz (\lstinline{app.py}), no guardamos nada en la base de datos mientras el usuario agrega productos. Usamos una lista temporal en memoria (\lstinline{self.lista\_carrito}).
+
+\begin{itemize}
+    \item \textbf{¿Por qué?} Esto evita llenar la base de datos con pedidos ''borrador'' o incompletos. Solo contactamos a la base de datos al momento final de confirmar la compra.
+\end{itemize}
+
+\textbf{2. Carga Ansiosa de Datos (Eager Loading)} \\
+
+Para evitar errores al leer los ingredientes de los menús seleccionados, utilizamos la técnica de \lstinline{joinedload}.
+
+\begin{itemize}
+    \item Cuando agregamos un menú al carrito, le decimos a SQLAlchemy: ''Trae el menú, pero también trae su receta y los nombres de los ingredientes AHORA MISMO''.
+    \item Esto evita el error \lstinline{DetachedInstanceError} y asegura que tengamos los datos listos para validar el stock sin hacer múltiples consultas lentas.
+\end{itemize}
+
+\textbf{Código Clave (app.py):}
+
+\begin{lstlisting}[language=Python, frame=single]
+# Traemos todo el arbol de dependencias en una sola consulta eficiente
+menu = db.query(Menu).options(
+    joinedload(Menu.ingredientes_receta).joinedload(MenuIngrediente.ingrediente)
+).get(id_menu)
+\end{lstlisting}
+\vspace{3mm}
+
+\textbf{3. Programación Funcional (Cálculos y Boleta)} \\
+
+Cumplimos con la rúbrica utilizando funciones de orden superior para procesar la venta:
+
+\begin{itemize}
+    \item \lstinline{map}: Lo usamos para extraer los precios de la lista de objetos menú y para formatear las líneas de texto de la boleta.
+    \item \lstinline{reduce}: Lo usamos para sumar todos los precios y obtener el total de la compra de manera elegante.
+\end{itemize}
+
+\textbf{Código Clave (pedido_crud.py):}
+
+\begin{lstlisting}[language=Python, frame=single]
+# Cálculo funcional del total
+precios = map(lambda m: m.precio, lista_menus)
+total_compra = reduce(lambda a, b: a + b, precios, 0)
+
+# Generación funcional de la boleta
+items_texto = list(map(lambda m: f"- {m.nombre}: ${m.precio}", lista_menus))
+\end{lstlisting}
+\vspace{3mm}
+
+\textbf{4. Validación de Stock Transaccional} \\
+
+Antes de crear el pedido, el sistema recopila \textbf{todos} los ingredientes necesarios para la compra completa. Si falta stock de un solo ingrediente para un solo menú, la compra se rechaza completa. Esto previene que se vendan productos que no se pueden preparar.
+
+\subsection{Pestaña pedido}
+
+La pestaña de Pedidos funciona como el centro de control y auditoría del sistema. A diferencia del ''Panel de Compra'' (que es para vender), esta pestaña está diseñada para \textbf{visualizar, filtrar y anular} transacciones pasadas. \\
+
+Para que esto funcione de manera fluida y segura, implementamos 3 soluciones técnicas clave: \\
+
+\textbf{1. Optimización de Consultas (Eager Loading)} \\
+
+El desafío principal aquí era mostrar en la tabla no solo el ID del pedido, sino qué \textbf{menús contenía} y el \textbf{total en dinero}.
+
+\begin{itemize}
+    \item Si usáramos consultas normales, el sistema tendría que hacer 1 consulta para listar los pedidos y luego 1 consulta extra por cada pedido para saber sus menús (el famoso problema ''N+1'').
+    \item \textbf{Solución:}  Usamos \lstinline{joinedload} en SQLAlchemy. Esto trae el Pedido y todos sus Menús asociados en una \textbf{sola consulta SQL}, haciendo que la carga de la tabla sea instantánea.
+\end{itemize}
+
+\textbf{Código Clave (app.py):}
+
+\begin{lstlisting}[language=Python, frame=single]
+# Traemos el Pedido Y sus Menus de una sola vez
+pedidos = db.query(Pedido).options(joinedload(Pedido.menus)).all()
+
+# Luego calculamos el string de resumen en memoria
+nombres_menus = ", ".join([m.nombre for m in p.menus])
+\end{lstlisting}
+\vspace{3mm}
+
+\textbf{2. Filtrado en Memoria con Programación Funcional} \\
+
+Para buscar un pedido por el correo del cliente, no bombardeamos la base de datos con nuevas consultas cada vez que se presiona ''Buscar''.
+
+\begin{itemize}
+    \item \textbf{Solucion:} Traemos los datos y aplicamos un \textbf{filtro funcional en Python}. Utilizamos \lstinline{filter} junto con una función \lstinline{lambda} para discriminar qué pedidos mostrar según el texto ingresado. Esto cumple con el requisito de uso de funciones de orden superior.
+\end{itemize}
+
+\textbf{Código Clave (app.py):}
+
+\begin{lstlisting}
+# Filtramos la lista usando lambda sin volver a consultar la BD
+pedidos_a_mostrar = list(filter(
+    lambda p: texto_busqueda in p.cliente_email.lower(), 
+    todos_pedidos
+))
+\end{lstlisting}
+\vspace{3mm}
+
+\textbf{3. Lógica de ''Deshacer'' (Restauración de Stock)} \\
+
+La función de eliminar pedido no es un borrado simple. Es una \textbf{Anulación de Venta}.
+
+\begin{itemize}
+    \item Si borramos un pedido, los ingredientes que se usaron deben volver a la bodega.
+    \item \textbf{Solución:} Implementamos una función lógica que primero lee la receta del pedido, \textbf{devuelve el stock} sumando las cantidades a los ingredientes correspondientes, y finalmente elimina el registro del pedido. Esto mantiene el inventario cuadrado.
+\end{itemize}
+
+\textbf{Código Clave (pedido_crud.py):} 
+
+\begin{lstlisting}
+# 1. Devolver Stock (Logica inversa a la venta)
+IngredienteCRUD.devolver_stock_receta(db, pedido.menus)
+
+# 2. Borrar el registro solo despues de devolver los ingredientes
+db.delete(pedido)
+db.commit()
+\end{lstlisting}
+ 
+\subsection{Pestaña gráficos}
+
+Para la visualización de datos, implementamos una arquitectura que separa la lógica de cálculo de la interfaz gráfica. Utilizamos la librería \textbf{Matplotlib} para generar las figuras, pero el desafío técnico fue integrarla dentro de una ventana de \textbf{CustomTkinter} y alimentar los gráficos con datos complejos de la base de datos sin bloquear la aplicación. \\
+
+Los 3 pilares técnicos que hacen funcionar este módulo son: \\
+
+\textbf{1. Integración Matplotlib-Tkinter (El Puente)} \\
+
+Matplotlib por defecto abre ventanas emergentes. Para incrustar el gráfico dentro de nuestra pestaña, utilizamos el backend \lstinline{FigureCanvasTkAgg}.
+
+\begin{itemize}
+    \item Esto actúa como un "adaptador" que convierte una figura abstracta de Matplotlib en un \textbf{Widget de Tkinter} que se puede empaquetar (\lstinline{.pack()}) dentro de nuestros frames.
+    \item Cada vez que generamos un gráfico, destruimos el lienzo anterior para liberar memoria y dibujamos el nuevo.
+\end{itemize}
+
+\textbf{Código Clave (app.py):}
+
+\begin{lstlisting}[lenguage=Python, frame=single]
+# Transformamos la figura en un widget de Tkinter
+self.canvas_actual = FigureCanvasTkAgg(figura, master=self.frame_canvas)
+self.canvas_actual.draw()
+self.canvas_actual.get_tk_widget().pack(expand=True, fill="both")
+\end{lstlisting}
+\vspace{3mm}
+
+\textbf{2. Solución al problema "N+1" (Carga Ansiosa / Eager Loading)} \\
+
+Este fue el punto crítico. Para graficar ''Distribución de Menús'' o "Uso de Ingredientes", necesitábamos acceder a datos anidados (Pedido $\to$ Menú $\to$ Ingrediente).
+
+\begin{itemize}
+    \item Si hacíamos una consulta normal (\lstinline{db.query(Pedido).all()}), SQLAlchemy traía solo los pedidos. Al intentar leer los menús para contarlos, la aplicación fallaba o era muy lenta porque intentaba hacer cientos de micro-consultas a la base de datos (Lazy Loading).
+    \item \textbf{Solución:} Implementamos \lstinline{joinedload}. Le ordenamos a la base de datos que traiga \textbf{toda la jerarquía de datos en una sola consulta SQL gigante}. Esto hace que la generación del gráfico sea instantánea y libre de errores de conexión.
+\end{itemize}
+
+\textbf{Código Clave (graficos.py):}
+
+\begin{lstlisting}[lenguage=Python, frame=single]
+# Traemos Pedido + Menus + Receta + Ingredientes de una sola vez
+pedidos = db.query(Pedido).options(
+    joinedload(Pedido.menus)
+    .joinedload(Menu.ingredientes_receta)
+    .joinedload(MenuIngrediente.ingrediente)
+).all()
+\end{lstlisting}
+\vspace{3mm}
+
+\textbf{3. Procesamiento de Datos en Memoria} \\
+
+En lugar de escribir consultas SQL complejas con \lstinline{GROUP BY} (que son difíciles de mantener), optamos por traer los objetos y procesarlos usando \textbf{Python}.
+
+\begin{itemize}
+    \item Utilizamos estructuras como \lstinline{Counter} (de la librería \lstinline{collections}) y diccionarios para agrupar y contar los datos en memoria.
+    \item Esto nos da flexibilidad para cambiar la lógica del gráfico (ej: cambiar de diario a mensual) sin tocar la base de datos.
+\end{itemize}
+
+\end{document}
+
 
 \end{document}
