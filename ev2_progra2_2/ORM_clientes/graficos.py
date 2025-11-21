@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
-from sqlalchemy import func
-from models import Pedido, Menu, Ingrediente
+from sqlalchemy.orm import joinedload
+from models import Pedido, Menu, MenuIngrediente
 from collections import Counter
 
 class Graficos:
@@ -9,74 +9,92 @@ class Graficos:
     @staticmethod
     def obtener_datos(db, tipo_grafico, periodo=None):
         """
-        Extrae y procesa los datos de la BD.
+        Extrae y procesa los datos de la BD usando Carga Ansiosa (joinedload).
         Retorna: (etiquetas, valores, mensaje_error)
         """
         etiquetas = []
         valores = []
         
         try:
-            if tipo_grafico == "Ventas por Fecha":
-                # Obtenemos todos los pedidos
-                pedidos = db.query(Pedido).all()
-                if not pedidos:
-                    return [], [], "No hay pedidos registrados."
+            # --- CONSULTA MAESTRA ---
+            # Traemos Pedidos + Menús + Receta + Ingredientes (Todo junto)
+            # Esto soluciona que los gráficos no detecten cambios.
+            pedidos = db.query(Pedido).options(
+                joinedload(Pedido.menus)
+                .joinedload(Menu.ingredientes_receta)
+                .joinedload(MenuIngrediente.ingrediente)
+            ).all()
 
-                # Agrupamos usando Python (Más fácil de controlar periodos que SQL directo)
+            if not pedidos:
+                return [], [], "No hay pedidos registrados para graficar."
+
+            # --- LÓGICA SEGÚN TIPO ---
+            
+            if tipo_grafico == "Ventas por Fecha":
                 data_agrupada = {}
                 
                 for p in pedidos:
-                    fecha = p.fecha
+                    # Si no tiene fecha, usamos hoy (seguridad)
+                    if not p.fecha: continue
+                        
                     key = ""
                     if periodo == "Diario":
-                        key = fecha.strftime("%Y-%m-%d")
+                        key = p.fecha.strftime("%Y-%m-%d")
                     elif periodo == "Mensual":
-                        key = fecha.strftime("%Y-%m")
+                        key = p.fecha.strftime("%Y-%m")
                     elif periodo == "Anual":
-                        key = fecha.strftime("%Y")
+                        key = p.fecha.strftime("%Y")
                     else:
-                        key = fecha.strftime("%Y-%m-%d")
+                        key = p.fecha.strftime("%Y-%m-%d")
                     
                     data_agrupada[key] = data_agrupada.get(key, 0) + 1
 
-                # Ordenar por fecha
+                # Ordenar cronológicamente
                 for k in sorted(data_agrupada.keys()):
                     etiquetas.append(k)
                     valores.append(data_agrupada[k])
 
             elif tipo_grafico == "Distribución Menús":
-                # Contar frecuencia de menús en pedidos
-                pedidos = db.query(Pedido).all()
                 conteo = Counter()
+                hay_datos = False
                 
                 for p in pedidos:
-                    # Asumiendo que p.menu es la relación
-                    for m in p.menu:
+                    # p.menus ahora SÍ tiene datos gracias a joinedload
+                    for m in p.menus:
                         conteo[m.nombre] += 1
+                        hay_datos = True
                 
-                if not conteo:
-                    return [], [], "No hay menús vendidos aún."
+                if not hay_datos:
+                    return [], [], "Hay pedidos, pero no tienen menús asociados."
 
-                # Top 10
+                # Top 10 más vendidos
                 for nombre, cant in conteo.most_common(10):
                     etiquetas.append(nombre)
                     valores.append(cant)
 
             elif tipo_grafico == "Uso de Ingredientes":
-                # Contar ingredientes basado en menús vendidos
-                pedidos = db.query(Pedido).all()
                 conteo = Counter()
+                hay_datos = False
                 
                 for p in pedidos:
-                    for m in p.menu:
-                        for ing in m.ingrediente:
-                            # Sumamos 1 vez por uso (o ing.cantidad si tuvieramos el dato exacto)
-                            conteo[ing.nombre] += 1
+                    for m in p.menus:
+                        # Accedemos a la tabla intermedia (Association Object)
+                        for item_receta in m.ingredientes_receta:
+                            # item_receta.ingrediente es el objeto Ingrediente real
+                            nombre_ing = item_receta.ingrediente.nombre
+                            
+                            # Opción A: Contar frecuencia de uso (1 pedido = 1 voto)
+                            conteo[nombre_ing] += 1
+                            
+                            # Opción B (Más avanzada): Sumar cantidad real usada
+                            # conteo[nombre_ing] += item_receta.cantidad_requerida
+                            
+                            hay_datos = True
                 
-                if not conteo:
-                    return [], [], "No se han utilizado ingredientes aún."
+                if not hay_datos:
+                    return [], [], "Los menús vendidos no tienen ingredientes definidos."
 
-                # Top 10
+                # Top 10 ingredientes más usados
                 for nombre, cant in conteo.most_common(10):
                     etiquetas.append(nombre)
                     valores.append(cant)
@@ -84,23 +102,24 @@ class Graficos:
             return etiquetas, valores, None
 
         except Exception as e:
+            print(f"Error en gráficos: {e}")
             return [], [], f"Error al procesar datos: {str(e)}"
 
     @staticmethod
     def crear_figura(etiquetas, valores, tipo_grafico):
         """
-        Genera la Figura de Matplotlib lista para incrustar.
+        Genera la Figura de Matplotlib.
         """
-        # Crear figura (Tamaño 5x4 pulgadas, 100 dpi)
-        fig = Figure(figsize=(5, 4), dpi=100)
+        # Ajustamos el tamaño para que se vea bien en la app
+        fig = Figure(figsize=(6, 4.5), dpi=100)
         ax = fig.add_subplot(111)
 
         if not etiquetas:
-            return fig # Retorna figura vacía si no hay datos
+            return fig 
 
         if tipo_grafico == "Distribución Menús":
-            # Gráfico de Torta
-            ax.pie(valores, labels=etiquetas, autopct='%1.1f%%', startangle=90, colors=plt.cm.Paired.colors)
+            # Gráfico de Pastel
+            ax.pie(valores, labels=etiquetas, autopct='%1.1f%%', startangle=90)
             ax.set_title("Menús Más Vendidos")
         
         else:
@@ -109,12 +128,12 @@ class Graficos:
             barras = ax.bar(etiquetas, valores, color=colores)
             
             ax.set_title(tipo_grafico)
-            ax.set_ylabel("Cantidad")
+            ax.set_ylabel("Frecuencia / Cantidad")
             
-            # Rotar etiquetas en eje X si son muchas
-            ax.tick_params(axis='x', rotation=45, labelsize=8)
+            # Rotar etiquetas para que no se superpongan
+            ax.tick_params(axis='x', rotation=45, labelsize=9)
             
-            # Poner números sobre las barras
+            # Etiquetas de valor sobre las barras
             for bar in barras:
                 height = bar.get_height()
                 ax.annotate(f'{int(height)}',
@@ -123,5 +142,5 @@ class Graficos:
                             textcoords="offset points",
                             ha='center', va='bottom')
         
-        fig.tight_layout() # Ajustar márgenes
+        fig.tight_layout() 
         return fig
