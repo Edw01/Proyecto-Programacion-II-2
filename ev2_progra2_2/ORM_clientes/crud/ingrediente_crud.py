@@ -101,18 +101,19 @@ class IngredienteCRUD:
             return "Archivo no encontrado."
 
         try:
-            # Usamos 'utf-8-sig' para leer archivos creados en Excel/Windows correctamente
+            # Apertura del stream en modo READ para trabajar el archivo
+            # Se usa 'utf-8-sig' para leer archivos creados en Excel/Windows correctamente
             with open(ruta_archivo, mode='r', encoding='utf-8-sig') as f:
                 
-                # Leemos primero para detectar el separador automáticamente (coma o punto y coma)
+                # Detección del separador CSV con csv.Sniffer
                 sample = f.read(1024)
                 f.seek(0)
                 dialect = csv.Sniffer().sniff(sample)
                 
+                # Conversión a diccionario (no usamos DF ahora)
                 reader = csv.DictReader(f, dialect=dialect)
                 
-                # Normalizar cabeceras (quitar espacios extra y convertir a minúsculas)
-                # Esto arregla si el CSV dice " nombre " o "Nombre"
+                # Normalización de cabeceras
                 if reader.fieldnames:
                     reader.fieldnames = [col.strip().lower() for col in reader.fieldnames]
 
@@ -129,11 +130,14 @@ class IngredienteCRUD:
                 # Filtrar filas vacías
                 filas_validas = list(filter(lambda row: row.get('nombre') and row.get('cantidad'), filas))
 
+                # Registro de ingredientes nuevos
                 count_agregados = 0
+                # Registro de ingredientes existentes actualizados
                 count_actualizados = 0
                 
                 for row in filas_validas:
                     try:
+                        # Normalización/formateo de valores
                         nombre = row['nombre'].strip()
                         unidad = row['unidad'].strip()
                         # Reemplazar coma por punto si el Excel guardó decimales como "10,5"

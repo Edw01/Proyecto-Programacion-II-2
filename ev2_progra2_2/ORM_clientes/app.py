@@ -51,10 +51,14 @@ class App(ctk.CTk):
         self.crear_interfaz_pedidos()
         self.crear_interfaz_graficos()
 
-
+    # --------------------------------------------------------------------------------------
     # PESTAÑA CLIENTES
+    # --------------------------------------------------------------------------------------
 
     def crear_interfaz_clientes(self):
+
+        # Creación de la interfaz de Clientes
+
         frame = self.tab_clientes
         frame_form = ctk.CTkFrame(frame)
         frame_form.pack(pady=10, padx=10, fill="x")
@@ -85,18 +89,25 @@ class App(ctk.CTk):
         self.tree_clientes.heading("email", text="Email")
         self.tree_clientes.heading("edad", text="Edad")
         self.tree_clientes.pack(expand=True, fill="both", padx=10, pady=10)
+
+        # Carga de Clientes en el Treeview del listado
         self.cargar_clientes()
 
     def guardar_cliente(self):
+
+        # Recolección de datos
         nombre = self.entry_nombre_cli.get()
         email = self.entry_email_cli.get()
         edad_str = self.entry_edad_cli.get()
+
+        # Validación previa del valor de edad
         try:
             edad = int(edad_str)
         except ValueError:
             messagebox.showerror("Error", "Edad inválida")
             return
-
+        
+        # CRUD: Creación de Cliente y actualización automática de listado
         db = next(get_session())
         if ClienteCRUD.crear_cliente(db, nombre, email, edad):
             messagebox.showinfo("Éxito", "Cliente guardado")
@@ -113,34 +124,39 @@ class App(ctk.CTk):
             print("Error: No se encontró la tabla de clientes.")
             return
 
-        # 1. Limpiar tabla
+        # Limpieza de Treeview previo
         for item in tree.get_children():
             tree.delete(item)
         
-        # 2. Leer de BD
+        # CRUD: Lectura de Clientes
         db = next(get_session())
         clientes = ClienteCRUD.leer_clientes(db)
         db.close()
 
-        # 3. Llenar tabla
+        # Llenado del Treeview con registros de Cliente
         for c in clientes:
             # Ajusta los valores según las columnas que tengas
             tree.insert("", "end", values=(c.nombre, c.email, c.edad))
 
+
     def eliminar_cliente(self):
+
+        # Validación de la selección de un cliente en Treeview
         selected = self.tree_clientes.selection()
         if not selected:
             messagebox.showwarning("Atención", "Seleccione un cliente de la lista.")
             return
         
+        # Obtención de la PK del cliente
         email = self.tree_clientes.item(selected[0])['values'][1]
         
+        # CRUD: Eliminación de cliente con mensaje preventivo, se captura un valor del resultado de la operación
         if messagebox.askyesno("Confirmar", f"¿Eliminar cliente {email}?"):
             db = next(get_session())
-            resultado = ClienteCRUD.borrar_cliente(db, email) # Capturamos el resultado
+            resultado = ClienteCRUD.borrar_cliente(db, email)
             db.close()
             
-            # --- MANEJO DE RESPUESTAS ---
+            # Manejo e información del resultado de la eliminación
             if resultado == "OK":
                 messagebox.showinfo("Éxito", "Cliente eliminado correctamente.")
                 self.cargar_clientes()
@@ -152,9 +168,16 @@ class App(ctk.CTk):
                 messagebox.showerror("Error", "No se pudo eliminar el cliente.")
 
 
+
+
+    # --------------------------------------------------------------------------------------
     # PESTAÑA INGREDIENTES
+    # --------------------------------------------------------------------------------------
 
     def crear_interfaz_ingredientes(self):
+
+        # Creación de la interfaz de Ingredientes
+
         frame = self.tab_ingredientes
         frame_form = ctk.CTkFrame(frame)
         frame_form.pack(pady=10, padx=10, fill="x")
@@ -174,7 +197,6 @@ class App(ctk.CTk):
 
         ctk.CTkButton(frame_botones, text="Guardar",
                       command=self.guardar_ingrediente).pack(side="left", padx=5)
-        # BOTÓN CSV
         ctk.CTkButton(frame_botones, text="Cargar CSV", command=self.importar_csv,
                       fg_color="green").pack(side="left", padx=5)
         ctk.CTkButton(frame_botones, text="Bajo Stock (<5)",
@@ -192,11 +214,15 @@ class App(ctk.CTk):
         self.tree_ingredientes.heading("unidad", text="Unidad")
         self.tree_ingredientes.heading("cantidad", text="Cantidad")
         self.tree_ingredientes.pack(expand=True, fill="both", padx=10, pady=10)
+
+        # Carga de Ingredientes en el Treeview del listado
         self.cargar_ingredientes()
 
     def importar_csv(self):
+        # Apertura normal del archivo
         archivo = filedialog.askopenfilename(
             filetypes=[("CSV Files", "*.csv")])
+        # CRUD: Creación masiva de Ingrediente con procesado de filas de CSV
         if archivo:
             db = next(get_session())
             mensaje = IngredienteCRUD.cargar_masivamente_desde_csv(db, archivo)
