@@ -56,8 +56,6 @@ class Pedido(Base):
                          back_populates="pedidos")
 
 # Entidad Menu
-
-
 class Menu(Base):
     __tablename__ = 'menu'
     id = Column(Integer, primary_key=True, autoincrement=True)

@@ -110,13 +110,28 @@ class App(ctk.CTk):
         db.close()
 
     def eliminar_cliente(self):
-        sel = self.tree_clientes.selection()
-        if sel:
-            email = self.tree_clientes.item(sel[0])['values'][1]
+        selected = self.tree_clientes.selection()
+        if not selected:
+            messagebox.showwarning("Atención", "Seleccione un cliente de la lista.")
+            return
+        
+        email = self.tree_clientes.item(selected[0])['values'][1]
+        
+        if messagebox.askyesno("Confirmar", f"¿Eliminar cliente {email}?"):
             db = next(get_session())
-            ClienteCRUD.borrar_cliente(db, email)
+            resultado = ClienteCRUD.borrar_cliente(db, email) # Capturamos el resultado
             db.close()
-            self.cargar_clientes(self.tree_clientes)
+            
+            # --- MANEJO DE RESPUESTAS ---
+            if resultado == "OK":
+                messagebox.showinfo("Éxito", "Cliente eliminado correctamente.")
+                self.cargar_clientes()
+            elif resultado == "Tiene Pedidos":
+                messagebox.showerror("Acción Denegada", 
+                                     "No se puede eliminar este cliente porque tiene PEDIDOS asociados.\n"
+                                     "Borre los pedidos primero si realmente desea eliminarlo.")
+            else:
+                messagebox.showerror("Error", "No se pudo eliminar el cliente.")
 
     # --- PESTAÑA INGREDIENTES ---
     def crear_interfaz_ingredientes(self):
