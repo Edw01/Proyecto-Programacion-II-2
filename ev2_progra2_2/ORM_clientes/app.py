@@ -1,5 +1,5 @@
 import customtkinter as ctk
-from tkinter import messagebox, ttk, filedialog # AGREGADO filedialog
+from tkinter import messagebox, ttk, filedialog  # AGREGADO filedialog
 from database import get_session, engine, Base, verificar_conexion
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from crud.cliente_crud import ClienteCRUD
@@ -21,10 +21,11 @@ class App(ctk.CTk):
         super().__init__()
 
         if not verificar_conexion():
-            messagebox.showerror("Error Crítico", "No se pudo conectar a la Base de Datos.\nVerifique que el archivo .db no esté bloqueado.")
-            self.destroy() # Cierra la app
+            messagebox.showerror(
+                "Error Crítico", "No se pudo conectar a la Base de Datos.\nVerifique que el archivo .db no esté bloqueado.")
+            self.destroy()  # Cierra la app
             return
-        
+
         self.title("Gestión de Restaurante - Evaluación 3")
         self.geometry("950x700")
 
@@ -244,7 +245,7 @@ class App(ctk.CTk):
 
         # --- TABLA (TREEVIEW) ACTUALIZADA ---
         # Agregamos la columna "receta"
-        columns = ("id", "nombre", "descripcion", "precio", "receta")
+        columns = ("id", "nombre", "descripcion", "receta", "precio")
 
         self.tree_menus = ttk.Treeview(frame, columns=columns, show="headings")
 
@@ -259,11 +260,11 @@ class App(ctk.CTk):
 
         # Receta (Ingredientes y cantidad)
         self.tree_menus.heading("receta", text="Ingredientes (Receta)")
-        self.tree_menus.column("receta", width=400)  # Le damos harto espacio
+        self.tree_menus.column("receta", width=330)  # Le damos harto espacio
 
         # Precio
-        self.tree_menus.heading("receta", text="Precio")
-        self.tree_menus.column("receta", width=200)
+        self.tree_menus.heading("precio", text="Precio")
+        self.tree_menus.column("precio", width=120)
 
         self.tree_menus.pack(expand=True, fill="both", padx=10, pady=10)
 
@@ -291,7 +292,7 @@ class App(ctk.CTk):
 
             # Insertamos en la tabla incluyendo la nueva columna
             self.tree_menus.insert("", "end", values=(
-                m.id, m.nombre, m.descripcion, f"${m.precio: .2f}", detalle_receta))
+                m.id, m.nombre, m.descripcion, detalle_receta, f"${m.precio: .2f}"))
         db.close()
 
     def guardar_menu(self):
@@ -478,13 +479,18 @@ class App(ctk.CTk):
             fg_color="green"
         ).pack(side="left", padx=5)
 
-        columns_sel = ("menu")
+        columns_sel = ("menu", "precio")
         self.tree_menus_seleccionados = ttk.Treeview(
             frame, columns=columns_sel, show="headings"
         )
         self.tree_menus_seleccionados.heading("menu", text="Menú")
+        self.tree_menus_seleccionados.heading("precio", text="Precio")
         self.tree_menus_seleccionados.pack(
             expand=True, fill="both", padx=10, pady=10)
+
+        self.label_total = ctk.CTkLabel(
+            frame, text="TOTAL: $0.00", font=ctk.CTkFont(size=14, weight="bold"))
+        self.label_total.pack(pady=5)
 
     def agregar_menu_seleccionado(self):
         seleccionado = self.combo_menus.get()
@@ -507,9 +513,14 @@ class App(ctk.CTk):
 
         self.menus_seleccionados.append(menu_obj)
 
-        # Mostrar en el TreeView
+        # Insertar nombre y precio en TreeView
         self.tree_menus_seleccionados.insert(
-            "", "end", values=(menu_obj.nombre,))
+            "", "end", values=(menu_obj.nombre, f"${menu_obj.precio:.2f}")
+        )
+
+        # Calcular y mostrar total
+        total = sum(m.precio for m in self.menus_seleccionados)
+        self.label_total.configure(text=f"TOTAL: ${total:.2f}")
 
     def crear_pedido(self):
 
