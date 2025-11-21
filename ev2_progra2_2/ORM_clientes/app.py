@@ -2,11 +2,13 @@ import customtkinter as ctk
 from tkinter import messagebox, ttk, filedialog  # AGREGADO filedialog
 from database import get_session, engine, Base, verificar_conexion
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from sqlalchemy.orm import joinedload
 from crud.cliente_crud import ClienteCRUD
 from crud.pedido_crud import PedidoCRUD
 from crud.ingrediente_crud import IngredienteCRUD
 from crud.menu_crud import MenuCRUD
 from graficos import Graficos
+from models import Pedido, MenuIngrediente, Menu
 from fpdf import FPDF
 from datetime import datetime
 from tkcalendar import DateEntry
@@ -38,14 +40,14 @@ class App(ctk.CTk):
         self.tab_clientes = self.tabview.add("Clientes")
         self.tab_ingredientes = self.tabview.add("Stock / Ingredientes")
         self.tab_menu = self.tabview.add("Menu")
-        self.tab_compra = self.tabview.add("Compra")
+        self.tab_compra = self.tabview.add("Panel de Compra")
         self.tab_pedidos = self.tabview.add("Pedidos")
         self.tab_graficos = self.tabview.add("Gráficos")
 
         self.crear_interfaz_clientes()
         self.crear_interfaz_ingredientes()
         self.crear_interfaz_menu()
-        self.crear_interfaz_compra()
+        self.crear_panel_compra()
         self.crear_interfaz_pedidos()
         self.crear_interfaz_graficos()
 
@@ -83,7 +85,7 @@ class App(ctk.CTk):
         self.tree_clientes.heading("email", text="Email")
         self.tree_clientes.heading("edad", text="Edad")
         self.tree_clientes.pack(expand=True, fill="both", padx=10, pady=10)
-        self.cargar_clientes(self.tree_clientes)
+        self.cargar_clientes()
 
     def guardar_cliente(self):
         nombre = self.entry_nombre_cli.get()
@@ -98,19 +100,32 @@ class App(ctk.CTk):
         db = next(get_session())
         if ClienteCRUD.crear_cliente(db, nombre, email, edad):
             messagebox.showinfo("Éxito", "Cliente guardado")
-            self.cargar_clientes(self.tree_clientes)
+            self.cargar_clientes()
         else:
             messagebox.showerror("Error", "No se pudo guardar")
         db.close()
 
-    def cargar_clientes(self, frame):
-        for item in frame.get_children():
-            frame.delete(item)
+    def cargar_clientes(self):
+        
+        tree = getattr(self, 'tree_clientes', None) or getattr(self, 'treeview_clientes', None)
+        
+        if not tree:
+            print("Error: No se encontró la tabla de clientes.")
+            return
+
+        # 1. Limpiar tabla
+        for item in tree.get_children():
+            tree.delete(item)
+        
+        # 2. Leer de BD
         db = next(get_session())
-        for c in ClienteCRUD.leer_clientes(db):
-            frame.insert(
-                "", "end", values=(c.nombre, c.email, c.edad))
+        clientes = ClienteCRUD.leer_clientes(db)
         db.close()
+
+        # 3. Llenar tabla
+        for c in clientes:
+            # Ajusta los valores según las columnas que tengas
+            tree.insert("", "end", values=(c.nombre, c.email, c.edad))
 
     def eliminar_cliente(self):
         selected = self.tree_clientes.selection()
@@ -247,11 +262,10 @@ class App(ctk.CTk):
         self.entry_desc_menu = ctk.CTkEntry(
             frame_form, placeholder_text="Descripción")
         self.entry_desc_menu.pack(side="left", padx=5, expand=True, fill="x")
+        
 
-        self.entry_precio_menu = ctk.CTkEntry(
-            frame_form, placeholder_text="Precio")
-        self.entry_precio_menu.pack(side="left", padx=5, expand=True, fill="x")
-
+        self.entry_precio_menu = ctk.CTkEntry(frame_form, placeholder_text="Precio ($)", width=80)
+        self.entry_precio_menu.pack(side="left", padx=5)
         # Campo para ingresar IDs
         self.entry_receta = ctk.CTkEntry(
             frame_form, placeholder_text="Receta (ID:Cant, ID:Cant)", width=200)
@@ -322,12 +336,19 @@ class App(ctk.CTk):
     def guardar_menu(self):
         nombre = self.entry_nombre_menu.get()
         desc = self.entry_desc_menu.get()
-        receta_str = self.entry_receta.get()  # String tipo "1:10, 3:5"
-        precio = self.entry_precio_menu.get()
+        receta_str = self.entry_receta.get() # String tipo "1:10, 3:5"
+        precio_str = self.entry_precio_menu.get()  
 
-        if not nombre or not receta_str:
-            messagebox.showwarning(
-                "Datos", "Nombre y Receta son obligatorios.")
+        if not nombre or not receta_str or not precio_str:
+            messagebox.showwarning("Datos", "Todos los campos son obligatorios.")
+            return
+
+        # Validar que precio sea número
+        try:
+            precio = int(precio_str)
+            if precio < 0: raise ValueError
+        except ValueError:
+            messagebox.showerror("Error", "El precio debe ser un número entero positivo.")
             return
 
         # Procesar el string de receta para convertirlo en la lista que pide tu CRUD
@@ -348,8 +369,7 @@ class App(ctk.CTk):
 
         db = next(get_session())
         # Llamamos a tu función avanzada con LAMBDA/MAP/REDUCE
-        nuevo = MenuCRUD.crear_menu(
-            db, nombre, desc, lista_ingredientes, precio)
+        nuevo = MenuCRUD.crear_menu(db, nombre, desc, lista_ingredientes, precio)
         db.close()
 
         if nuevo:
@@ -627,76 +647,138 @@ class App(ctk.CTk):
 
     def crear_interfaz_pedidos(self):
         frame = self.tab_pedidos
+        
+        # --- FILTROS DE BÚSQUEDA ---
+        frame_filtros = ctk.CTkFrame(frame)
+        frame_filtros.pack(pady=10, padx=10, fill="x")
+        
+        ctk.CTkLabel(frame_filtros, text="Filtrar por Email Cliente:").pack(side="left", padx=5)
+        self.entry_cliente_email_ped = ctk.CTkEntry(frame_filtros, placeholder_text="email@cliente.com")
+        self.entry_cliente_email_ped.pack(side="left", padx=5, expand=True, fill="x")
+        
+        ctk.CTkButton(frame_filtros, text="Buscar", command=self.cargar_pedidos).pack(side="left", padx=5)
 
-        # --- Selector de cliente ---
-        db = next(get_session())
-        clientes = ClienteCRUD.leer_clientes(db)
-        cliente_nombres = ["Todos"] + \
-            [c.nombre for c in clientes]  # opción "Todos"
-
-        self.combo_clientes_filtro = ctk.CTkOptionMenu(
-            frame,
-            values=cliente_nombres,
-            command=self.cargar_pedidos  # se ejecuta al cambiar selección
-        )
-        self.combo_clientes_filtro.set("Todos")
-        self.combo_clientes_filtro.pack(padx=10, pady=5, fill="x")
-
-        frame = ctk.CTkFrame(self.tab_pedidos)
-        frame.pack(expand=True, fill="both", padx=10, pady=10)
-
-        # --- Label ---
-        ctk.CTkLabel(frame, text="Pedidos Registrados",
-                     font=ctk.CTkFont(size=16, weight="bold")).pack(pady=5)
-
-        # --- Treeview para mostrar pedidos ---
-        columns = ("id", "cliente", "descripcion", "fecha", "menus")
-        self.tree_pedidos = ttk.Treeview(
-            frame, columns=columns, show="headings")
-        self.tree_pedidos.heading("id", text="ID Pedido")
+        # --- BOTONES DE ACCIÓN ---
+        frame_botones = ctk.CTkFrame(frame, fg_color="transparent")
+        frame_botones.pack(pady=5)
+        
+        ctk.CTkButton(frame_botones, text="Actualizar Lista", command=self.cargar_pedidos).pack(side="left", padx=5)
+        ctk.CTkButton(frame_botones, text="Anular Pedido (Devolver Stock)", command=self.eliminar_pedido, fg_color="red").pack(side="left", padx=5)
+        
+        # --- TABLA DE HISTORIAL ---
+        columns = ("id", "cliente", "descripcion", "fecha")
+        self.tree_pedidos = ttk.Treeview(frame, columns=columns, show="headings", height=15)
+        
+        self.tree_pedidos.heading("id", text="ID")
+        self.tree_pedidos.column("id", width=50)
+        
         self.tree_pedidos.heading("cliente", text="Cliente")
-        self.tree_pedidos.heading("descripcion", text="Descripción")
+        self.tree_pedidos.column("cliente", width=200)
+        
+        self.tree_pedidos.heading("descripcion", text="Detalle Compra")
+        self.tree_pedidos.column("descripcion", width=300)
+        
         self.tree_pedidos.heading("fecha", text="Fecha")
-        self.tree_pedidos.heading("menus", text="Menús")
-
-        # Ajustar ancho de columnas
-        self.tree_pedidos.column("id", width=50, anchor="center")
-        self.tree_pedidos.column("cliente", width=150)
-        self.tree_pedidos.column("descripcion", width=200)
-        self.tree_pedidos.column("fecha", width=150)
-        self.tree_pedidos.column("menus", width=250)
-
+        self.tree_pedidos.column("fecha", width=120)
+        
         self.tree_pedidos.pack(expand=True, fill="both", padx=10, pady=10)
 
-        # --- Botón para actualizar listado ---
-        ctk.CTkButton(frame, text="Actualizar Pedidos",
-                      command=self.cargar_pedidos).pack(pady=5)
+        self.cargar_pedidos()
 
-    def cargar_pedidos(self, cliente_seleccionado):
-        """Carga pedidos desde la BD y filtra por cliente si se indica."""
+    def actualizar_combo_menus(self):
         db = next(get_session())
-        if cliente_seleccionado == "Todos":
-            pedidos = PedidoCRUD.leer_pedidos(db)
+        menus = MenuCRUD.leer_menus(db)
+        db.close()
+        # Guardamos los nombres para el combo
+        nombres = [f"{m.id}: {m.nombre} (${m.precio})" for m in menus]
+        self.combo_menus.configure(values=nombres)
+        if nombres: self.combo_menus.set(nombres[0])
+
+    def agregar_al_carrito(self):
+        seleccion = self.combo_menus.get()
+        if not seleccion: return
+
+        # Extraer ID del string "1: Completo ($1500)"
+        id_menu = int(seleccion.split(":")[0])
+        
+        # Buscar el objeto menu en BD para tenerlo listo
+        db = next(get_session())
+        menu = db.query(Menu).get(id_menu) # Traemos el objeto simple
+        db.close() # Cerramos, pero guardamos el dato básico (ID, Nombre, Precio)
+
+        if menu:
+            self.lista_carrito.append(menu) # Guardamos en memoria
+            
+            # Actualizar visualización
+            self.text_carrito.configure(state="normal")
+            self.text_carrito.insert("end", f"• {menu.nombre} - ${menu.precio}\n")
+            self.text_carrito.configure(state="disabled")
+
+    def confirmar_compra(self):
+        email = self.entry_cliente_ped.get()
+        if not email or not self.lista_carrito:
+            messagebox.showwarning("Faltan Datos", "Ingrese email del cliente y agregue productos al carrito.")
+            return
+
+        # Necesitamos re-consultar los menús dentro de la sesión de transacción
+        # para que SQLAlchemy los reconozca y pueda descontar ingredientes
+        db = next(get_session())
+        
+        # Obtenemos los IDs del carrito
+        ids_menus = [m.id for m in self.lista_carrito]
+        
+        # Cargamos los objetos REALES con sus ingredientes listos
+        # Usamos 'in_' para traerlos todos de una vez
+        menus_para_venta = db.query(Menu).options(
+            joinedload(Menu.ingredientes_receta).joinedload("ingrediente")
+        ).filter(Menu.id.in_(ids_menus)).all()
+        
+        # Llamamos al CRUD Transaccional
+        descripcion_automatica = f"Venta de {len(self.lista_carrito)} items"
+        resultado = PedidoCRUD.crear_pedido_con_stock(db, email, descripcion_automatica, menus_para_venta)
+        
+        db.close()
+
+        if resultado == "OK":
+            messagebox.showinfo("Venta Exitosa", "Pedido creado y stock descontado correctamente.")
+            self.lista_carrito = [] # Vaciar carrito
+            self.text_carrito.configure(state="normal")
+            self.text_carrito.delete("1.0", "end")
+            self.text_carrito.configure(state="disabled")
+            self.cargar_pedidos()
         else:
-            pedidos = PedidoCRUD.leer_pedidos(db, cliente_seleccionado)
+            messagebox.showerror("Error en Venta", f"No se pudo procesar:\n{resultado}")
 
-        # Limpiar Treeview
-        for item in self.tree_pedidos.get_children():
-            self.tree_pedidos.delete(item)
+    def eliminar_pedido(self):
+        sel = self.tree_pedidos.selection()
+        if not sel: return
+        id_ped = self.tree_pedidos.item(sel[0])['values'][0]
 
-        # Insertar pedidos
-        for pedido in pedidos:
-            nombres_menus = ", ".join(menu.nombre for menu in pedido.menus)
-            self.tree_pedidos.insert(
-                "", "end",
-                values=(
-                    pedido.id,
-                    pedido.cliente.nombre,
-                    pedido.descripcion,
-                    pedido.fecha.strftime("%d/%m/%Y"),
-                    nombres_menus
-                )
-            )
+        if messagebox.askyesno("Devolución", "Al eliminar el pedido se devolverá el stock.\n¿Confirmar?"):
+            db = next(get_session())
+            exito = PedidoCRUD.borrar_pedido_y_restaurar_stock(db, id_ped)
+            db.close()
+
+            if exito:
+                messagebox.showinfo("Éxito", "Pedido anulado y stock restaurado.")
+                self.cargar_pedidos()
+            else:
+                messagebox.showerror("Error", "No se pudo anular el pedido.")
+
+    def cargar_pedidos(self, *args):
+        for i in self.tree_pedidos.get_children(): self.tree_pedidos.delete(i)
+        
+        db = next(get_session())
+        # Usamos eager loading para mostrar los menús en la tabla
+        pedidos = db.query(Pedido).options(joinedload(Pedido.menus)).all()
+        db.close()
+
+        for p in pedidos:
+            nombres_menus = ", ".join([m.nombre for m in p.menus])
+            total = sum([m.precio for m in p.menus])
+            fecha = p.fecha.strftime("%Y-%m-%d %H:%M") if p.fecha else ""
+            
+            self.tree_pedidos.insert("", "end", values=(p.id, p.cliente_email, fecha, nombres_menus, total))
 
     # PESTAÑA GRAFICOS
 
@@ -777,6 +859,140 @@ class App(ctk.CTk):
             figura, master=self.frame_canvas)
         self.canvas_actual.draw()
         self.canvas_actual.get_tk_widget().pack(expand=True, fill="both")
+
+    # --- PESTAÑA PANEL DE COMPRA ---
+
+    def crear_panel_compra(self):
+        frame = self.tab_compra
+        self.lista_carrito = [] # Lista temporal de objetos Menu
+
+        # --- SELECCIÓN DE CLIENTE ---
+        frame_cli = ctk.CTkFrame(frame)
+        frame_cli.pack(fill="x", padx=10, pady=5)
+        
+        ctk.CTkLabel(frame_cli, text="1. Seleccionar Cliente:").pack(side="left", padx=5)
+        self.combo_clientes_compra = ctk.CTkComboBox(frame_cli, width=250, state="readonly")
+        self.combo_clientes_compra.pack(side="left", padx=5)
+        
+        # Botón para recargar la lista de clientes si creaste uno nuevo
+        ctk.CTkButton(frame_cli, text="🔄", width=30, command=self.cargar_combo_clientes).pack(side="left", padx=5)
+
+        # --- SELECCIÓN DE PRODUCTOS ---
+        frame_prod = ctk.CTkFrame(frame)
+        frame_prod.pack(fill="x", padx=10, pady=5)
+
+        ctk.CTkLabel(frame_prod, text="2. Agregar Producto:").pack(side="left", padx=5)
+        self.combo_menus_compra = ctk.CTkComboBox(frame_prod, width=250, state="readonly")
+        self.combo_menus_compra.pack(side="left", padx=5)
+
+        ctk.CTkButton(frame_prod, text="Agregar al Carrito", command=self.agregar_al_carrito).pack(side="left", padx=10)
+
+        # --- RESUMEN (CARRITO) ---
+        ctk.CTkLabel(frame, text="3. Detalle del Pedido:").pack(pady=(10,0))
+        self.text_boleta_preview = ctk.CTkTextbox(frame, height=150)
+        self.text_boleta_preview.pack(fill="x", padx=10, pady=5)
+        self.text_boleta_preview.configure(state="disabled")
+
+        # --- ACCIONES ---
+        frame_actions = ctk.CTkFrame(frame, fg_color="transparent")
+        frame_actions.pack(pady=10)
+
+        ctk.CTkButton(frame_actions, text="Limpiar Carrito", fg_color="red", command=self.limpiar_carrito).pack(side="left", padx=10)
+        
+        # EL BOTÓN PRINCIPAL
+        ctk.CTkButton(frame_actions, text="GENERAR BOLETA Y GUARDAR", fg_color="green", height=40, command=self.procesar_compra).pack(side="left", padx=10)
+
+        # Cargar datos iniciales
+        self.cargar_combo_clientes()
+        self.cargar_combo_menus()
+
+    def cargar_combo_clientes(self):
+        db = next(get_session())
+        clientes = ClienteCRUD.leer_clientes(db)
+        db.close()
+        # Guardamos el email que es la PK
+        lista = [c.email for c in clientes]
+        self.combo_clientes_compra.configure(values=lista)
+        if lista: self.combo_clientes_compra.set(lista[0])
+
+    def cargar_combo_menus(self):
+        db = next(get_session())
+        menus = MenuCRUD.leer_menus(db)
+        db.close()
+        # Guardamos "ID: Nombre ($Precio)"
+        lista = [f"{m.id}: {m.nombre} (${m.precio})" for m in menus]
+        self.combo_menus_compra.configure(values=lista)
+        if lista: self.combo_menus_compra.set(lista[0])
+
+    def agregar_al_carrito(self):
+        seleccion = self.combo_menus_compra.get()
+        if not seleccion: return
+
+        # Extraer ID del string "1: Completo ($1500)"
+        try:
+            id_menu = int(seleccion.split(":")[0])
+        except ValueError:
+            return
+
+        db = next(get_session())
+        
+        # Usamos MenuIngrediente.ingrediente (Clase) en vez de "ingrediente" (String)
+        menu = db.query(Menu).options(
+            joinedload(Menu.ingredientes_receta).joinedload(MenuIngrediente.ingrediente)
+        ).get(id_menu)
+        
+        db.close()
+
+        if menu:
+            self.lista_carrito.append(menu)
+            self.actualizar_vista_carrito()
+
+    def actualizar_vista_carrito(self):
+        self.text_boleta_preview.configure(state="normal")
+        self.text_boleta_preview.delete("1.0", "end")
+        
+        total = 0
+        for m in self.lista_carrito:
+            self.text_boleta_preview.insert("end", f"• {m.nombre} \t\t ${m.precio}\n")
+            total += m.precio
+            
+        self.text_boleta_preview.insert("end", f"\nTOTAL ESTIMADO: ${total}")
+        self.text_boleta_preview.configure(state="disabled")
+
+    def limpiar_carrito(self):
+        self.lista_carrito = []
+        self.actualizar_vista_carrito()
+
+    def procesar_compra(self):
+        # 1. Obtener Cliente
+        email_cliente = self.combo_clientes_compra.get()
+        
+        # 2. Validaciones básicas de interfaz
+        if not email_cliente:
+            messagebox.showwarning("Faltan Datos", "Debe seleccionar un cliente.")
+            return
+        if not self.lista_carrito:
+            messagebox.showwarning("Carrito Vacío", "Agregue productos antes de generar la boleta.")
+            return
+
+        # 3. Llamar al CRUD Transaccional
+        db = next(get_session())
+        
+        ids_menus = [m.id for m in self.lista_carrito]
+        
+        # Usamos MenuIngrediente.ingrediente en lugar de "ingrediente"
+        menus_frescos = db.query(Menu).options(
+            joinedload(Menu.ingredientes_receta).joinedload(MenuIngrediente.ingrediente)
+        ).filter(Menu.id.in_(ids_menus)).all()
+
+        exito, resultado = PedidoCRUD.procesar_compra(db, email_cliente, menus_frescos)
+        db.close()
+
+        if exito:
+            messagebox.showinfo("Compra Exitosa", resultado)
+            self.limpiar_carrito()
+        else:
+            messagebox.showerror("Error en Compra", resultado)
 
 
 if __name__ == "__main__":

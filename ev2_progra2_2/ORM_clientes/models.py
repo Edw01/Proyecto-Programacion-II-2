@@ -12,16 +12,14 @@ class Cliente(Base):
     nombre = Column(String, nullable=False)
     edad = Column(Integer, nullable=False)
     pedido = relationship(
-        "Pedido", back_populates="cliente", uselist=False, cascade="all, delete-orphan")
+        "Pedido", back_populates="cliente", cascade="all, delete-orphan")
 
 
 # Tabla intermedia M:N entre Pedido y Menu (Sin cambios, simple asociación)
 pedido_menu = Table('pedido_menu', Base.metadata,
-                    Column('pedido_id', Integer, ForeignKey(
-                        'pedido.id'), primary_key=True),
-                    Column('menu_id', Integer, ForeignKey(
-                        'menu.id'), primary_key=True)
-                    )
+    Column('pedido_id', Integer, ForeignKey('pedido.id'), primary_key=True),
+    Column('menu_id', Integer, ForeignKey('menu.id'), primary_key=True)
+)
 
 # Cambio con el anterior:
 # Se reemplaza la Table simple por un Modelo de Asociación (Association Object)
@@ -49,11 +47,12 @@ class Pedido(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     descripcion = Column(String, nullable=False)
     fecha = Column(DateTime, default=datetime.datetime.now)
-    cliente_email = Column(String, ForeignKey(
-        'cliente.email', onupdate="CASCADE"), nullable=False)
+    
+    cliente_email = Column(String, ForeignKey('cliente.email'), nullable=False)
     cliente = relationship("Cliente", back_populates="pedido")
-    menus = relationship("Menu", secondary=pedido_menu,
-                         back_populates="pedidos")
+    
+    # Relación con Menús
+    menus = relationship("Menu", secondary=pedido_menu, back_populates="pedidos")
 
 # Entidad Menu
 class Menu(Base):

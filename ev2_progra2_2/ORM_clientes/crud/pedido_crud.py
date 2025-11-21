@@ -1,102 +1,96 @@
-import time
-from functools import reduce  # <--- IMPORTANTE: Necesario para el reduce
-from sqlalchemy.orm import Session
-from sqlalchemy.exc import SQLAlchemyError, OperationalError
-from models import Pedido, Cliente
+from functools import reduce
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.exc import SQLAlchemyError
+from models import Pedido, Cliente, Menu, MenuIngrediente
+from crud.ingrediente_crud import IngredienteCRUD
 import datetime
 
-
-
 class PedidoCRUD:
-
+    
     @staticmethod
-    def _try_commit(db: Session, max_retries=3, delay=0.5):
-        """Intentar hacer commit con reintentos en caso de errores de bloqueo."""
-        retries = 0
-        while retries < max_retries:
-            try:
-                db.commit()
-                return True
-            except OperationalError as e:
-                if "database is locked" in str(e):
-                    db.rollback()
-                    print(
-                        f"Intento {retries+1}/{max_retries}: la base de datos está bloqueada, reintentando en {delay} segundos...")
-                    time.sleep(delay)
-                    retries += 1
-                else:
-                    print(f"Error de base de datos: {e}")
-                    db.rollback()
-                    return False
-            except SQLAlchemyError as e:
-                print(f"Error al hacer commit: {e}")
-                db.rollback()
-                return False
-        print("Error: no se pudo hacer commit después de varios intentos.")
-        return False
-
-    @staticmethod
-    def crear_pedido(db: Session, cliente_email: str, descripcion: str, fecha: datetime.date):
-        # Buscamos por email, ya que es la PK en tu modelo Cliente
+    def procesar_compra(db: Session, cliente_email: str, lista_menus: list):
+        """
+        Gestiona la transacción completa: Valida, Descuenta Stock, Crea Pedido y Genera Boleta.
+        """
+        # 1. Validaciones
         cliente = db.query(Cliente).get(cliente_email)
-        if cliente:
-            pedido = Pedido(descripcion=descripcion,
-                            cliente=cliente, fecha=fecha)
-            db.add(pedido)
-            if not PedidoCRUD._try_commit(db):
-                return None
-            db.refresh(pedido)
-            return pedido
-        print(f"No se encontró el cliente con Email '{cliente_email}'.")
-        return None
+        if not cliente: return False, "Error: Cliente no válido."
+        if not lista_menus: return False, "Error: Carrito vacío."
+
+        # 2. Calculo Total (Map/Reduce)
+        precios = map(lambda m: m.precio, lista_menus)
+        total_compra = reduce(lambda a, b: a + b, precios, 0)
+
+        # 3. Recopilar ingredientes necesarios para validar stock
+        ingredientes_necesarios = []
+        for menu in lista_menus:
+            for item in menu.ingredientes_receta:
+                ingredientes_necesarios.append((item.ingrediente, item.cantidad_requerida))
+
+        # 4. Descontar Stock
+        if not IngredienteCRUD.descontar_stock_receta(db, ingredientes_necesarios):
+             return False, "Error: Stock insuficiente."
+
+        # 5. Guardar Pedido
+        try:
+            descripcion = f"Compra de {len(lista_menus)} items. Total: ${total_compra}"
+            nuevo_pedido = Pedido(descripcion=descripcion, cliente=cliente)
+            nuevo_pedido.menus = lista_menus 
+            
+            db.add(nuevo_pedido)
+            db.commit()
+            db.refresh(nuevo_pedido)
+
+            # 6. Boleta
+            items_texto = list(map(lambda m: f"- {m.nombre}: ${m.precio}", lista_menus))
+            boleta = (
+                f"--- BOLETA ---\n"
+                f"ID: {nuevo_pedido.id} | Cliente: {cliente.nombre}\n"
+                f"Fecha: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
+                f"----------------\n"
+                + "\n".join(items_texto) + "\n"
+                f"----------------\n"
+                f"TOTAL: ${total_compra}"
+            )
+            return True, boleta
+
+        except SQLAlchemyError as e:
+            db.rollback()
+            return False, f"Error BD: {str(e)}"
 
     @staticmethod
-    def leer_pedidos(db: Session, cliente_nombre=None):
-        query = db.query(Pedido).join(Cliente)
-        if cliente_nombre and cliente_nombre != "Todos":
-            query = query.filter(Cliente.nombre == cliente_nombre)
-        return query.all()
+    def leer_pedidos(db: Session):
+        return db.query(Pedido).options(joinedload(Pedido.menus)).all()
 
     @staticmethod
-    def actualizar_pedido(db: Session, pedido_id: int, nueva_descripcion: str):
-        pedido = db.query(Pedido).get(pedido_id)
-        if pedido:
-            pedido.descripcion = nueva_descripcion
-            if not PedidoCRUD._try_commit(db):
-                return None
-            db.refresh(pedido)
-            return pedido
-        print(f"No se encontró el pedido con ID '{pedido_id}'.")
-        return None
+    def borrar_pedido_y_restaurar_stock(db: Session, pedido_id: int):
+        """
+        Borra el pedido y DEVUELVE los ingredientes al stock.
+        """
+        # Cargar pedido con sus menús e ingredientes (Deep Eager Loading)
+        pedido = db.query(Pedido).options(
+            joinedload(Pedido.menus).joinedload(Menu.ingredientes_receta).joinedload(MenuIngrediente.ingrediente)
+        ).get(pedido_id)
 
-    @staticmethod
-    def borrar_pedido(db: Session, pedido_id: int):
-        pedido = db.query(Pedido).get(pedido_id)
-        if pedido:
+        if not pedido: return False
+
+        try:
+            # 1. Devolver Stock
+            IngredienteCRUD.devolver_stock_receta(db, pedido.menus)
+
+            # 2. Borrar Pedido
             db.delete(pedido)
-            if not PedidoCRUD._try_commit(db):
-                return False
+            db.commit()
             return True
-        return False
+        except SQLAlchemyError:
+            db.rollback()
+            return False
 
-    # NUEVA FUNCIÓN CON PROGRAMACIÓN FUNCIONAL (MAP/REDUCE)
     @staticmethod
     def calcular_total_ventas(db: Session):
-        """
-        Calcula un estimado total de ventas (Simulación para cumplir pauta).
-        Usa MAP para obtener valores y REDUCE para sumar.
-        """
-        pedidos = db.query(Pedido).all()
-
-        if not pedidos:
-            return 0.0
-
-        # 1. Simulación de precio: Asumimos un valor fijo por pedido si no hay menús
-        # (Esto es para cumplir el requisito académico de usar map/reduce)
-        # Transformamos cada objeto pedido en un monto (ej: $5000 por pedido)
-        montos = map(lambda p: 5000.0, pedidos)
-
-        # 2. REDUCE: Sumar todo a un solo valor total
-        total_general = reduce(lambda a, b: a + b, montos, 0.0)
-
-        return total_general
+        pedidos = db.query(Pedido).options(joinedload(Pedido.menus)).all()
+        if not pedidos: return 0.0
+        
+        # Sumar precios de todos los menús de todos los pedidos
+        montos = map(lambda p: sum(m.precio for m in p.menus), pedidos)
+        return reduce(lambda a, b: a + b, montos, 0.0)
