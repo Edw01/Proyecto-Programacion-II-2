@@ -19,6 +19,7 @@ Base.metadata.create_all(bind=engine)
 
 
 class App(ctk.CTk):
+
     def __init__(self):
         super().__init__()
 
@@ -48,7 +49,10 @@ class App(ctk.CTk):
         self.crear_interfaz_pedidos()
         self.crear_interfaz_graficos()
 
-    # --- PESTAÑA CLIENTES ---
+    # --------------------------------------------------------------------#
+    #                          PESTAÑA CLIENTES
+    # --------------------------------------------------------------------#
+
     def crear_interfaz_clientes(self):
         frame = self.tab_clientes
         frame_form = ctk.CTkFrame(frame)
@@ -118,7 +122,10 @@ class App(ctk.CTk):
             db.close()
             self.cargar_clientes(self.tree_clientes)
 
-    # --- PESTAÑA INGREDIENTES ---
+    # --------------------------------------------------------------------#
+    #                          PESTAÑA INGREDIENTES
+    # --------------------------------------------------------------------#
+
     def crear_interfaz_ingredientes(self):
         frame = self.tab_ingredientes
         frame_form = ctk.CTkFrame(frame)
@@ -211,7 +218,10 @@ class App(ctk.CTk):
             db.close()
             self.cargar_ingredientes()
 
-    # --- PESTAÑA MENUS ---
+    # --------------------------------------------------------------------#
+    #                          PESTAÑA MENUS
+    # --------------------------------------------------------------------#
+
     def crear_interfaz_menu(self):
         frame = self.tab_menu
 
@@ -352,7 +362,9 @@ class App(ctk.CTk):
             db.close()
             self.cargar_menus()
 
-    # --- PESTAÑA COMPRA (CONFIGURACIÓN DE PEDIDO) ---
+    # --------------------------------------------------------------------#
+    #            PESTAÑA COMPRA (CONFIGURACIÓN DE PEDIDO [C])
+    # --------------------------------------------------------------------#
 
     def generar_totales_pedido(self, pedido):
         """Calcula subtotal, IVA y total de un pedido."""
@@ -426,10 +438,11 @@ class App(ctk.CTk):
         frame_form = ctk.CTkFrame(frame)
         frame_form.pack(pady=10, padx=10, fill="x")
 
+        # INGRESO DE DATOS DEL PEDIDO
+
         # Selección del cliente
         db = next(get_session())
         self.clientes_db = ClienteCRUD.leer_clientes(db)
-        # o puedes usar c.nombre si prefieres mostrar nombre
         cliente_nombres = [c.email for c in self.clientes_db]
         self.combo_clientes = ctk.CTkOptionMenu(
             frame_form,
@@ -601,9 +614,27 @@ class App(ctk.CTk):
         db.close()
         messagebox.showinfo("Total", f"Ventas: ${tot:,.0f}")
 
-    # --- PESTAÑA PEDIDOS (LISTADO DE PEDIDOS) ---
+    # --------------------------------------------------------------------#
+    #            PESTAÑA PEDIDOS (MANIPULACIÓN DE PEDIDOS [RUD])
+    # --------------------------------------------------------------------#
 
     def crear_interfaz_pedidos(self):
+        frame = self.tab_pedidos
+
+        # --- Selector de cliente ---
+        db = next(get_session())
+        clientes = ClienteCRUD.leer_clientes(db)
+        cliente_nombres = ["Todos"] + \
+            [c.nombre for c in clientes]  # opción "Todos"
+
+        self.combo_clientes_filtro = ctk.CTkOptionMenu(
+            frame,
+            values=cliente_nombres,
+            command=self.cargar_pedidos  # se ejecuta al cambiar selección
+        )
+        self.combo_clientes_filtro.set("Todos")
+        self.combo_clientes_filtro.pack(padx=10, pady=5, fill="x")
+
         frame = ctk.CTkFrame(self.tab_pedidos)
         frame.pack(expand=True, fill="both", padx=10, pady=10)
 
@@ -634,11 +665,13 @@ class App(ctk.CTk):
         ctk.CTkButton(frame, text="Actualizar Pedidos",
                       command=self.cargar_pedidos).pack(pady=5)
 
-    def cargar_pedidos(self):
-        """Carga todos los pedidos desde la BD y los muestra en el Treeview."""
+    def cargar_pedidos(self, cliente_seleccionado):
+        """Carga pedidos desde la BD y filtra por cliente si se indica."""
         db = next(get_session())
-        # Debes tener un método que devuelva todos los pedidos
-        pedidos = PedidoCRUD.leer_pedidos(db)
+        if cliente_seleccionado == "Todos":
+            pedidos = PedidoCRUD.leer_pedidos(db)
+        else:
+            pedidos = PedidoCRUD.leer_pedidos(db, cliente_seleccionado)
 
         # Limpiar Treeview
         for item in self.tree_pedidos.get_children():
@@ -646,7 +679,6 @@ class App(ctk.CTk):
 
         # Insertar pedidos
         for pedido in pedidos:
-            # Obtener nombres de menús asociados
             nombres_menus = ", ".join(menu.nombre for menu in pedido.menus)
             self.tree_pedidos.insert(
                 "", "end",
@@ -659,7 +691,9 @@ class App(ctk.CTk):
                 )
             )
 
-    # --- PESTAÑA GRAFICOS ---
+    # --------------------------------------------------------------------#
+    #                       PESTAÑA GRAFICOS
+    # --------------------------------------------------------------------#
 
     def crear_interfaz_graficos(self):
         frame = self.tab_graficos
