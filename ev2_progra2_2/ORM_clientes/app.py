@@ -144,6 +144,8 @@ class App(ctk.CTk):
                       fg_color="green").pack(side="left", padx=5)
         ctk.CTkButton(frame_botones, text="Bajo Stock (<5)",
                       command=self.filtrar_bajo_stock, fg_color="orange").pack(side="left", padx=5)
+        ctk.CTkButton(frame_botones, text="Ver Todos (Refrescar)",
+                       command=self.cargar_ingredientes, fg_color="#3B8ED0").pack(side="left", padx=5)
         ctk.CTkButton(frame_botones, text="Eliminar", command=self.eliminar_ingrediente,
                       fg_color="red").pack(side="left", padx=5)
 
