@@ -3,9 +3,11 @@ from functools import reduce  # <--- IMPORTANTE: Necesario para el reduce
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError, OperationalError
 from models import Pedido, Cliente
+import datetime
+
 
 class PedidoCRUD:
-    
+
     @staticmethod
     def _try_commit(db: Session, max_retries=3, delay=0.5):
         """Intentar hacer commit con reintentos en caso de errores de bloqueo."""
@@ -17,7 +19,8 @@ class PedidoCRUD:
             except OperationalError as e:
                 if "database is locked" in str(e):
                     db.rollback()
-                    print(f"Intento {retries+1}/{max_retries}: la base de datos está bloqueada, reintentando en {delay} segundos...")
+                    print(
+                        f"Intento {retries+1}/{max_retries}: la base de datos está bloqueada, reintentando en {delay} segundos...")
                     time.sleep(delay)
                     retries += 1
                 else:
@@ -32,11 +35,12 @@ class PedidoCRUD:
         return False
 
     @staticmethod
-    def crear_pedido(db: Session, cliente_email: str, descripcion: str):
+    def crear_pedido(db: Session, cliente_email: str, descripcion: str, fecha: datetime.date):
         # Buscamos por email, ya que es la PK en tu modelo Cliente
         cliente = db.query(Cliente).get(cliente_email)
         if cliente:
-            pedido = Pedido(descripcion=descripcion, cliente=cliente)
+            pedido = Pedido(descripcion=descripcion,
+                            cliente=cliente, fecha=fecha)
             db.add(pedido)
             if not PedidoCRUD._try_commit(db):
                 return None
@@ -79,16 +83,16 @@ class PedidoCRUD:
         Usa MAP para obtener valores y REDUCE para sumar.
         """
         pedidos = db.query(Pedido).all()
-        
+
         if not pedidos:
             return 0.0
 
         # 1. Simulación de precio: Asumimos un valor fijo por pedido si no hay menús
         # (Esto es para cumplir el requisito académico de usar map/reduce)
         # Transformamos cada objeto pedido en un monto (ej: $5000 por pedido)
-        montos = map(lambda p: 5000.0, pedidos) 
+        montos = map(lambda p: 5000.0, pedidos)
 
         # 2. REDUCE: Sumar todo a un solo valor total
         total_general = reduce(lambda a, b: a + b, montos, 0.0)
-        
+
         return total_general

@@ -9,6 +9,8 @@ from crud.menu_crud import MenuCRUD
 from graficos import Graficos
 from fpdf import FPDF
 from datetime import datetime
+from tkcalendar import DateEntry
+
 
 # Configuración inicial
 ctk.set_appearance_mode("System")
@@ -427,7 +429,6 @@ class App(ctk.CTk):
         self.clientes_db = ClienteCRUD.leer_clientes(db)
         # o puedes usar c.nombre si prefieres mostrar nombre
         cliente_nombres = [c.email for c in self.clientes_db]
-
         self.combo_clientes = ctk.CTkOptionMenu(
             frame_form,
             values=cliente_nombres
@@ -438,6 +439,10 @@ class App(ctk.CTk):
         self.entry_desc_ped = ctk.CTkEntry(
             frame_form, placeholder_text="Descripción")
         self.entry_desc_ped.pack(side="left", padx=5, expand=True, fill="x")
+
+        # Fecha del pedido
+        self.dateentry_fecha = DateEntry(frame_form, date_pattern='yyyy-mm-dd')
+        self.dateentry_fecha.pack(side="left", padx=5, expand=True, fill="x")
 
         # ctk.CTkButton(frame_form, text="Total Ventas (Reduce)",
         #         command=self.ver_total_ventas, fg_color="green").pack(side="left", padx=5)
@@ -526,6 +531,7 @@ class App(ctk.CTk):
 
         cliente_email = self.combo_clientes.get().strip()
         descripcion = self.entry_desc_ped.get().strip()
+        fecha = self.dateentry_fecha.get_date()
 
         if not cliente_email or not descripcion:
             print("Debe seleccionar un cliente y escribir una descripción")
@@ -539,7 +545,7 @@ class App(ctk.CTk):
 
         db = next(get_session())
 
-        pedido = PedidoCRUD.crear_pedido(db, cliente_email, descripcion)
+        pedido = PedidoCRUD.crear_pedido(db, cliente_email, descripcion, fecha)
         if not pedido:
             print("No se pudo crear el pedido")
             return
@@ -646,7 +652,7 @@ class App(ctk.CTk):
                     pedido.id,
                     pedido.cliente.nombre,
                     pedido.descripcion,
-                    pedido.fecha.strftime("%d/%m/%Y %H:%M:%S"),
+                    pedido.fecha.strftime("%d/%m/%Y"),
                     nombres_menus
                 )
             )
