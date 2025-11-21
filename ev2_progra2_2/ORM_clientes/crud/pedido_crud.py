@@ -3,6 +3,8 @@ from functools import reduce  # <--- IMPORTANTE: Necesario para el reduce
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError, OperationalError
 from models import Pedido, Cliente
+import datetime
+
 
 
 class PedidoCRUD:
@@ -34,11 +36,12 @@ class PedidoCRUD:
         return False
 
     @staticmethod
-    def crear_pedido(db: Session, cliente_email: str, descripcion: str):
+    def crear_pedido(db: Session, cliente_email: str, descripcion: str, fecha: datetime.date):
         # Buscamos por email, ya que es la PK en tu modelo Cliente
         cliente = db.query(Cliente).get(cliente_email)
         if cliente:
-            pedido = Pedido(descripcion=descripcion, cliente=cliente)
+            pedido = Pedido(descripcion=descripcion,
+                            cliente=cliente, fecha=fecha)
             db.add(pedido)
             if not PedidoCRUD._try_commit(db):
                 return None

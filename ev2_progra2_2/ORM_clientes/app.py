@@ -1,6 +1,6 @@
 import customtkinter as ctk
 from tkinter import messagebox, ttk, filedialog  # AGREGADO filedialog
-from database import get_session, engine, Base
+from database import get_session, engine, Base, verificar_conexion
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from crud.cliente_crud import ClienteCRUD
 from crud.pedido_crud import PedidoCRUD
@@ -9,6 +9,8 @@ from crud.menu_crud import MenuCRUD
 from graficos import Graficos
 from fpdf import FPDF
 from datetime import datetime
+from tkcalendar import DateEntry
+
 
 # Configuración inicial
 ctk.set_appearance_mode("System")
@@ -20,6 +22,13 @@ class App(ctk.CTk):
 
     def __init__(self):
         super().__init__()
+
+        if not verificar_conexion():
+            messagebox.showerror(
+                "Error Crítico", "No se pudo conectar a la Base de Datos.\nVerifique que el archivo .db no esté bloqueado.")
+            self.destroy()  # Cierra la app
+            return
+
         self.title("Gestión de Restaurante - Evaluación 3")
         self.geometry("950x700")
 
@@ -142,6 +151,8 @@ class App(ctk.CTk):
                       fg_color="green").pack(side="left", padx=5)
         ctk.CTkButton(frame_botones, text="Bajo Stock (<5)",
                       command=self.filtrar_bajo_stock, fg_color="orange").pack(side="left", padx=5)
+        ctk.CTkButton(frame_botones, text="Ver Todos (Refrescar)",
+                       command=self.cargar_ingredientes, fg_color="#3B8ED0").pack(side="left", padx=5)
         ctk.CTkButton(frame_botones, text="Eliminar", command=self.eliminar_ingrediente,
                       fg_color="red").pack(side="left", padx=5)
 
@@ -248,7 +259,7 @@ class App(ctk.CTk):
 
         # --- TABLA (TREEVIEW) ACTUALIZADA ---
         # Agregamos la columna "receta"
-        columns = ("id", "nombre", "descripcion", "precio", "receta")
+        columns = ("id", "nombre", "descripcion", "receta", "precio")
 
         self.tree_menus = ttk.Treeview(frame, columns=columns, show="headings")
 
@@ -263,11 +274,11 @@ class App(ctk.CTk):
 
         # Receta (Ingredientes y cantidad)
         self.tree_menus.heading("receta", text="Ingredientes (Receta)")
-        self.tree_menus.column("receta", width=400)  # Le damos harto espacio
+        self.tree_menus.column("receta", width=330)  # Le damos harto espacio
 
         # Precio
-        self.tree_menus.heading("receta", text="Precio")
-        self.tree_menus.column("receta", width=200)
+        self.tree_menus.heading("precio", text="Precio")
+        self.tree_menus.column("precio", width=120)
 
         self.tree_menus.pack(expand=True, fill="both", padx=10, pady=10)
 
@@ -295,7 +306,7 @@ class App(ctk.CTk):
 
             # Insertamos en la tabla incluyendo la nueva columna
             self.tree_menus.insert("", "end", values=(
-                m.id, m.nombre, m.descripcion, f"${m.precio: .2f}", detalle_receta))
+                m.id, m.nombre, m.descripcion, detalle_receta, f"${m.precio: .2f}"))
         db.close()
 
     def guardar_menu(self):
@@ -433,7 +444,6 @@ class App(ctk.CTk):
         db = next(get_session())
         self.clientes_db = ClienteCRUD.leer_clientes(db)
         cliente_nombres = [c.email for c in self.clientes_db]
-
         self.combo_clientes = ctk.CTkOptionMenu(
             frame_form,
             values=cliente_nombres
@@ -444,6 +454,10 @@ class App(ctk.CTk):
         self.entry_desc_ped = ctk.CTkEntry(
             frame_form, placeholder_text="Descripción")
         self.entry_desc_ped.pack(side="left", padx=5, expand=True, fill="x")
+
+        # Fecha del pedido
+        self.dateentry_fecha = DateEntry(frame_form, date_pattern='yyyy-mm-dd')
+        self.dateentry_fecha.pack(side="left", padx=5, expand=True, fill="x")
 
         # ctk.CTkButton(frame_form, text="Total Ventas (Reduce)",
         #         command=self.ver_total_ventas, fg_color="green").pack(side="left", padx=5)
@@ -485,13 +499,18 @@ class App(ctk.CTk):
             fg_color="green"
         ).pack(side="left", padx=5)
 
-        columns_sel = ("menu")
+        columns_sel = ("menu", "precio")
         self.tree_menus_seleccionados = ttk.Treeview(
             frame, columns=columns_sel, show="headings"
         )
         self.tree_menus_seleccionados.heading("menu", text="Menú")
+        self.tree_menus_seleccionados.heading("precio", text="Precio")
         self.tree_menus_seleccionados.pack(
             expand=True, fill="both", padx=10, pady=10)
+
+        self.label_total = ctk.CTkLabel(
+            frame, text="TOTAL: $0.00", font=ctk.CTkFont(size=14, weight="bold"))
+        self.label_total.pack(pady=5)
 
     def agregar_menu_seleccionado(self):
         seleccionado = self.combo_menus.get()
@@ -514,14 +533,20 @@ class App(ctk.CTk):
 
         self.menus_seleccionados.append(menu_obj)
 
-        # Mostrar en el TreeView
+        # Insertar nombre y precio en TreeView
         self.tree_menus_seleccionados.insert(
-            "", "end", values=(menu_obj.nombre,))
+            "", "end", values=(menu_obj.nombre, f"${menu_obj.precio:.2f}")
+        )
+
+        # Calcular y mostrar total
+        total = sum(m.precio for m in self.menus_seleccionados)
+        self.label_total.configure(text=f"TOTAL: ${total:.2f}")
 
     def crear_pedido(self):
 
         cliente_email = self.combo_clientes.get().strip()
         descripcion = self.entry_desc_ped.get().strip()
+        fecha = self.dateentry_fecha.get_date()
 
         if not cliente_email or not descripcion:
             print("Debe seleccionar un cliente y escribir una descripción")
@@ -535,7 +560,7 @@ class App(ctk.CTk):
 
         db = next(get_session())
 
-        pedido = PedidoCRUD.crear_pedido(db, cliente_email, descripcion)
+        pedido = PedidoCRUD.crear_pedido(db, cliente_email, descripcion, fecha)
         if not pedido:
             print("No se pudo crear el pedido")
             return
@@ -661,7 +686,7 @@ class App(ctk.CTk):
                     pedido.id,
                     pedido.cliente.nombre,
                     pedido.descripcion,
-                    pedido.fecha.strftime("%d/%m/%Y"),  # si solo quieres fecha
+                    pedido.fecha.strftime("%d/%m/%Y"),
                     nombres_menus
                 )
             )

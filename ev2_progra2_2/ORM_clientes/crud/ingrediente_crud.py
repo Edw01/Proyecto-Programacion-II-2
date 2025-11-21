@@ -9,18 +9,30 @@ class IngredienteCRUD:
 
     @staticmethod
     def crear_ingrediente(db: Session, nombre: str, unidad: str, cantidad: float):
-        # Validar nombre no vacío y stock positivo con LAMBDA
+        # 1. Validación funcional (Lambda)
         validar_datos = lambda n, c: len(n.strip()) > 0 and c >= 0
         
         if not validar_datos(nombre, cantidad):
             print(f"Error: Datos inválidos para '{nombre}'.")
             return None
 
-        # Verificar duplicados
-        if db.query(Ingrediente).filter(Ingrediente.nombre.ilike(nombre)).first():
-            print(f"El ingrediente '{nombre}' ya existe.")
-            return None
+        # 2. Verificar existencia
+        ingrediente_existente = db.query(Ingrediente).filter(Ingrediente.nombre.ilike(nombre)).first()
+        
+        if ingrediente_existente:
+            # --- LÓGICA INTELIGENTE ---
+            # Si ya existe, no damos error. Sumamos al stock
+            ingrediente_existente.cantidad += float(cantidad)
+            try:
+                db.commit()
+                db.refresh(ingrediente_existente)
+                print(f"Stock actualizado: {nombre} ahora tiene {ingrediente_existente.cantidad}")
+                return ingrediente_existente
+            except SQLAlchemyError as e:
+                db.rollback()
+                return None
 
+        # 3. Si no existe, lo creamos nuevo
         nuevo = Ingrediente(nombre=nombre, unidad=unidad, cantidad=float(cantidad))
         db.add(nuevo)
         try:
