@@ -582,16 +582,18 @@ class App(ctk.CTk):
         if not hasattr(self, "menus_seleccionados"):
             self.menus_seleccionados = []
 
+        print(menu_obj.id)
+        print("Hola")
+
         # Evitar duplicados
-        if menu_obj in self.menus_seleccionados:
+        if any(m.id == menu_obj.id for m in self.menus_seleccionados):
             return
-
-        self.menus_seleccionados.append(menu_obj)
-
-        # Insertar nombre y precio en TreeView
-        self.tree_menus_seleccionados.insert(
-            "", "end", values=(menu_obj.nombre, f"${menu_obj.precio:.2f}")
-        )
+        else:
+            self.menus_seleccionados.append(menu_obj)
+            # Insertar nombre y precio en TreeView
+            self.tree_menus_seleccionados.insert(
+                "", "end", values=(menu_obj.nombre, f"${menu_obj.precio:.2f}")
+            )
 
         # Calcular y mostrar total
         total = sum(m.precio for m in self.menus_seleccionados)
@@ -918,7 +920,9 @@ class App(ctk.CTk):
         self.canvas_actual.draw()
         self.canvas_actual.get_tk_widget().pack(expand=True, fill="both")
 
-    # --- PESTAÑA PANEL DE COMPRA ---
+    # --------------------------------------------------------------------------------------
+    # PESTAÑA DE COMPRA
+    # --------------------------------------------------------------------------------------
 
     def crear_panel_compra(self):
         frame = self.tab_compra
@@ -1003,6 +1007,9 @@ class App(ctk.CTk):
         try:
             id_menu = int(seleccion.split(":")[0])
         except ValueError:
+            return
+
+        if any(m.id == id_menu for m in self.lista_carrito):
             return
 
         db = next(get_session())
