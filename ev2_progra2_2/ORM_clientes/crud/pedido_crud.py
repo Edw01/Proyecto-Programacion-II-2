@@ -6,6 +6,7 @@ from models import Pedido, Cliente
 import datetime
 
 
+
 class PedidoCRUD:
 
     @staticmethod
@@ -50,8 +51,11 @@ class PedidoCRUD:
         return None
 
     @staticmethod
-    def leer_pedidos(db: Session):
-        return db.query(Pedido).all()
+    def leer_pedidos(db: Session, cliente_nombre=None):
+        query = db.query(Pedido).join(Cliente)
+        if cliente_nombre and cliente_nombre != "Todos":
+            query = query.filter(Cliente.nombre == cliente_nombre)
+        return query.all()
 
     @staticmethod
     def actualizar_pedido(db: Session, pedido_id: int, nueva_descripcion: str):
