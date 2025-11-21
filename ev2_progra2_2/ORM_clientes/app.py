@@ -1,6 +1,6 @@
 import customtkinter as ctk
-from tkinter import messagebox, ttk, filedialog  # AGREGADO filedialog
-from database import get_session, engine, Base
+from tkinter import messagebox, ttk, filedialog # AGREGADO filedialog
+from database import get_session, engine, Base, verificar_conexion
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from crud.cliente_crud import ClienteCRUD
 from crud.pedido_crud import PedidoCRUD
@@ -19,6 +19,12 @@ Base.metadata.create_all(bind=engine)
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
+
+        if not verificar_conexion():
+            messagebox.showerror("Error Crítico", "No se pudo conectar a la Base de Datos.\nVerifique que el archivo .db no esté bloqueado.")
+            self.destroy() # Cierra la app
+            return
+        
         self.title("Gestión de Restaurante - Evaluación 3")
         self.geometry("950x700")
 
