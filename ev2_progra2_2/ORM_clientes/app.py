@@ -49,9 +49,8 @@ class App(ctk.CTk):
         self.crear_interfaz_pedidos()
         self.crear_interfaz_graficos()
 
-    # --------------------------------------------------------------------#
-    #                          PESTAÑA CLIENTES
-    # --------------------------------------------------------------------#
+
+    # PESTAÑA CLIENTES
 
     def crear_interfaz_clientes(self):
         frame = self.tab_clientes
@@ -137,9 +136,8 @@ class App(ctk.CTk):
             else:
                 messagebox.showerror("Error", "No se pudo eliminar el cliente.")
 
-    # --------------------------------------------------------------------#
-    #                          PESTAÑA INGREDIENTES
-    # --------------------------------------------------------------------#
+
+    # PESTAÑA INGREDIENTES
 
     def crear_interfaz_ingredientes(self):
         frame = self.tab_ingredientes
@@ -233,9 +231,7 @@ class App(ctk.CTk):
             db.close()
             self.cargar_ingredientes()
 
-    # --------------------------------------------------------------------#
-    #                          PESTAÑA MENUS
-    # --------------------------------------------------------------------#
+    # PESTAÑA MENUS
 
     def crear_interfaz_menu(self):
         frame = self.tab_menu
@@ -272,7 +268,6 @@ class App(ctk.CTk):
         ctk.CTkButton(frame_botones, text="Eliminar", command=self.eliminar_menu,
                       fg_color="red").pack(side="left", padx=5)
 
-        # --- TABLA (TREEVIEW) ACTUALIZADA ---
         # Agregamos la columna "receta"
         columns = ("id", "nombre", "descripcion", "receta", "precio")
 
@@ -377,9 +372,8 @@ class App(ctk.CTk):
             db.close()
             self.cargar_menus()
 
-    # --------------------------------------------------------------------#
-    #            PESTAÑA COMPRA (CONFIGURACIÓN DE PEDIDO [C])
-    # --------------------------------------------------------------------#
+
+    # PESTAÑA COMPRA 
 
     def generar_totales_pedido(self, pedido):
         """Calcula subtotal, IVA y total de un pedido."""
@@ -629,9 +623,7 @@ class App(ctk.CTk):
         db.close()
         messagebox.showinfo("Total", f"Ventas: ${tot:,.0f}")
 
-    # --------------------------------------------------------------------#
-    #            PESTAÑA PEDIDOS (MANIPULACIÓN DE PEDIDOS [RUD])
-    # --------------------------------------------------------------------#
+    # PESTAÑA PEDIDOS (MANIPULACIÓN DE PEDIDOS [RUD])
 
     def crear_interfaz_pedidos(self):
         frame = self.tab_pedidos
@@ -706,9 +698,7 @@ class App(ctk.CTk):
                 )
             )
 
-    # --------------------------------------------------------------------#
-    #                       PESTAÑA GRAFICOS
-    # --------------------------------------------------------------------#
+    # PESTAÑA GRAFICOS
 
     def crear_interfaz_graficos(self):
         frame = self.tab_graficos
