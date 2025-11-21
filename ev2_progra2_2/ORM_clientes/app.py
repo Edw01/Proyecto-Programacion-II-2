@@ -893,6 +893,17 @@ class App(ctk.CTk):
         self.text_boleta_preview.pack(fill="x", padx=10, pady=5)
         self.text_boleta_preview.configure(state="disabled")
 
+        # --- NUEVO: SELECCIÓN DE FECHA ---
+        frame_fecha = ctk.CTkFrame(frame)
+        frame_fecha.pack(fill="x", padx=10, pady=5)
+        
+        ctk.CTkLabel(frame_fecha, text="Fecha del Pedido:").pack(side="left", padx=5)
+        
+        # Widget de Calendario
+        self.cal_fecha_compra = DateEntry(frame_fecha, width=12, background='darkblue',
+                                          foreground='white', borderwidth=2, date_pattern='yyyy-mm-dd')
+        self.cal_fecha_compra.pack(side="left", padx=5)
+
         # --- ACCIONES ---
         frame_actions = ctk.CTkFrame(frame, fg_color="transparent")
         frame_actions.pack(pady=10)
@@ -967,7 +978,10 @@ class App(ctk.CTk):
         # 1. Obtener Cliente
         email_cliente = self.combo_clientes_compra.get()
         
-        # 2. Validaciones básicas de interfaz
+        # 2. OBTENER FECHA DEL CALENDARIO
+        fecha_obj = self.cal_fecha_compra.get_date() # Retorna objeto date (YYYY-MM-DD)
+        
+        # Validaciones básicas
         if not email_cliente:
             messagebox.showwarning("Faltan Datos", "Debe seleccionar un cliente.")
             return
@@ -975,17 +989,18 @@ class App(ctk.CTk):
             messagebox.showwarning("Carrito Vacío", "Agregue productos antes de generar la boleta.")
             return
 
-        # 3. Llamar al CRUD Transaccional
+        # 3. Llamar al CRUD
         db = next(get_session())
         
         ids_menus = [m.id for m in self.lista_carrito]
         
-        # Usamos MenuIngrediente.ingrediente en lugar de "ingrediente"
+        # Usamos la clase MenuIngrediente para evitar el error de strings
         menus_frescos = db.query(Menu).options(
             joinedload(Menu.ingredientes_receta).joinedload(MenuIngrediente.ingrediente)
         ).filter(Menu.id.in_(ids_menus)).all()
 
-        exito, resultado = PedidoCRUD.procesar_compra(db, email_cliente, menus_frescos)
+        # PASAMOS LA FECHA AL CRUD
+        exito, resultado = PedidoCRUD.procesar_compra(db, email_cliente, menus_frescos, fecha_seleccionada=fecha_obj)
         db.close()
 
         if exito:

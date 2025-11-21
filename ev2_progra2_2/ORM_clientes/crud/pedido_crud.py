@@ -8,45 +8,57 @@ import datetime
 class PedidoCRUD:
     
     @staticmethod
-    def procesar_compra(db: Session, cliente_email: str, lista_menus: list):
+    def procesar_compra(db: Session, cliente_email: str, lista_menus: list, fecha_seleccionada=None):
         """
-        Gestiona la transacción completa: Valida, Descuenta Stock, Crea Pedido y Genera Boleta.
+        Gestiona la transacción completa.
+        Ahora acepta 'fecha_seleccionada' para el registro histórico.
         """
         # 1. Validaciones
         cliente = db.query(Cliente).get(cliente_email)
         if not cliente: return False, "Error: Cliente no válido."
         if not lista_menus: return False, "Error: Carrito vacío."
 
-        # 2. Calculo Total (Map/Reduce)
+        # 2. Calculo Total
         precios = map(lambda m: m.precio, lista_menus)
         total_compra = reduce(lambda a, b: a + b, precios, 0)
 
-        # 3. Recopilar ingredientes necesarios para validar stock
+        # 3. Stock
         ingredientes_necesarios = []
         for menu in lista_menus:
             for item in menu.ingredientes_receta:
                 ingredientes_necesarios.append((item.ingrediente, item.cantidad_requerida))
 
-        # 4. Descontar Stock
         if not IngredienteCRUD.descontar_stock_receta(db, ingredientes_necesarios):
              return False, "Error: Stock insuficiente."
 
-        # 5. Guardar Pedido
+        # 4. Guardar Pedido CON FECHA
         try:
+            # Si no nos pasan fecha, usamos la de hoy.
+            if not fecha_seleccionada:
+                fecha_final = datetime.datetime.now()
+            else:
+                fecha_final = fecha_seleccionada
+
             descripcion = f"Compra de {len(lista_menus)} items. Total: ${total_compra}"
-            nuevo_pedido = Pedido(descripcion=descripcion, cliente=cliente)
+            
+            # AQUÍ ASIGNAMOS LA FECHA SELECCIONADA
+            nuevo_pedido = Pedido(descripcion=descripcion, cliente=cliente, fecha=fecha_final)
             nuevo_pedido.menus = lista_menus 
             
             db.add(nuevo_pedido)
             db.commit()
             db.refresh(nuevo_pedido)
 
-            # 6. Boleta
+            # 5. Boleta
             items_texto = list(map(lambda m: f"- {m.nombre}: ${m.precio}", lista_menus))
+            
+            # Formateamos la fecha para la boleta
+            fecha_str = fecha_final.strftime('%Y-%m-%d') if hasattr(fecha_final, 'strftime') else str(fecha_final)
+
             boleta = (
                 f"--- BOLETA ---\n"
                 f"ID: {nuevo_pedido.id} | Cliente: {cliente.nombre}\n"
-                f"Fecha: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
+                f"Fecha Emisión: {fecha_str}\n"
                 f"----------------\n"
                 + "\n".join(items_texto) + "\n"
                 f"----------------\n"
